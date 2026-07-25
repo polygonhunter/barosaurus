@@ -68,7 +68,7 @@ and the modal falls back to dispatching a synthetic `input` event for refresh, a
 Obsidian's own arrow handling for movement. Ctrl+N/Ctrl+P would then be dropped rather
 than broken.
 
-## 4. ☐ Rewriting another command's hotkey (the Cmd+K takeover)
+## 4. ☐ Rewriting another command's hotkey (the Cmd+K takeover) — NOT BUILT
 
 **Assumption:** `app.hotkeyManager` exposes enough to move `editor:insert-link` to
 Cmd+Shift+K and to revert it, so the onboarding modal can offer a one-click takeover of
@@ -81,27 +81,31 @@ side (`setHotkeys` / `removeDefaultHotkeys` / `bake` / `save`) is entirely unver
 `Insert link` really moved and that Barosaurus really holds Cmd+K. Restart Obsidian and
 check it persisted. Then use the revert button and confirm both go back.
 
-**If it fails:** degrade the onboarding option from "do it for me" to "show me how" — the
-modal explains the two steps and offers a button that opens Settings → Hotkeys. No other
-code changes; the button already exists in `src/settings.ts`.
+**Status:** the takeover is deliberately NOT implemented. `src/ui/unsafe.ts` exposes only
+`getHotkeys` / `getDefaultHotkeys`; there is no write path, and inventing one against an
+entirely unverified internal in order to move a *different* command's shortcut is a poor
+trade. What ships is the "show me how" degradation: the settings tab explains the two
+steps and offers a button that opens Settings → Hotkeys. This gate stays open in case the
+write side is ever worth revisiting.
 
 ## 5. ☐ Modal height against the software keyboard on phones
 
 **Assumption:** `window.visualViewport.height` shrinks when the software keyboard opens on
-both iOS and Android, so the modal can size itself against it instead of against
-`innerHeight` and avoid having its last rows sit underneath the keyboard.
+both iOS and Android, so the modal could size itself against it instead of against
+`innerHeight`.
 
-No sibling plugin does this — Searchosaurus and Slashosaurus both solve mobile purely with
-`body.is-phone` CSS and never touch `visualViewport`. So there is no in-family precedent
-to lean on, on either platform.
+**Status:** NOT implemented, on purpose. What ships is the CSS-only path — the same one
+Searchosaurus and Slashosaurus use — with `env(safe-area-inset-bottom)` padding on the
+result list. No sibling plugin measures `visualViewport`, so there is no in-family
+precedent on either platform, and the honest order is to measure the problem before
+writing code for it.
 
 **Check:** open the bar on a phone, focus the input, and confirm the last result row stays
-visible above the keyboard. Repeat in landscape. Repeat on the other platform — iOS and
-Android historically differ here.
+reachable above the keyboard. Repeat in landscape, and on the other platform — iOS and
+Android have historically differed here.
 
-**If it fails:** fall back to a pure CSS solution — `max-height` in `dvh` units with
-`env(safe-area-inset-bottom)`, which is already in `styles.css` — and drop the JS
-measurement entirely.
+**If it fails:** add the `visualViewport.height` measurement, sizing the modal against it
+on `resize`. That is the only reason to take on the complexity.
 
 ## 6. ☐ Deferred tabs in the open-tabs source
 

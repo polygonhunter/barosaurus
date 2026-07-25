@@ -57,13 +57,13 @@ Barosaurus is the fifth plugin in the -osaurus family, next to [**Linkosaurus**]
 
 Barosaurus ships **without a shortcut**, because a plugin should not quietly take one of your keys. Assign one under *Settings → Hotkeys* and search for **"Open Barosaurus"**.
 
-`⌘K` is the natural home — it is what every other tool with a command bar uses. One thing to know before you take it: Obsidian already uses `⌘K` for *Insert link*. Move that one to `⌘⇧K` first and the two live together happily. Barosaurus can do the swap for you when you first open it, and put it back with one click if you change your mind.
+`⌘K` is the natural home — it is what every other tool with a command bar uses. One thing to know before you take it: Obsidian already uses `⌘K` for *Insert link*. Move that one to `⌘⇧K` first and the two live together happily. The settings tab has a button that takes you straight to the hotkey list.
 
 If you would rather not spend a shortcut at all, switch on **double-tap shift** in the settings and press shift twice.
 
 ### On your phone
 
-The phone layout is not the desktop one squeezed down. The panel goes flat and full width, the glass and the blur come off, rows grow to a proper touch size, the preview pane disappears because there is no room for it, and the modal measures itself against the software keyboard so the last result never hides underneath it. Tablets keep the full desktop layout. A ribbon icon is on by default, so the bar is reachable without configuring anything.
+The phone layout is not the desktop one squeezed down. The panel goes flat and full width, the glass and the blur come off, rows grow to a proper touch size, and the preview pane is not merely hidden but never built — a phone has the least to spare for reading files and rendering Markdown it cannot show you. The result list keeps clear of the home indicator. Tablets keep the full desktop layout, pill and all. A ribbon icon is on by default, so the bar is reachable without configuring anything.
 
 ## Privacy
 

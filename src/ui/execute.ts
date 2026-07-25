@@ -212,6 +212,16 @@ export async function runAction(
 				}
 				return "close";
 			}
+			case "reveal-system": {
+				const path = pathOf(item);
+				if (path === null) return "close";
+				// Desktop only by nature; on mobile the internal is simply
+				// absent, and the guard turns that into a notice.
+				if (!showInSystemFolder(app, path)) {
+					new Notice("Barosaurus: this platform has no file manager to open");
+				}
+				return "close";
+			}
 
 			// ------------------------------------------------------ commands
 			case "assign-hotkey":
