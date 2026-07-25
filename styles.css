@@ -60,6 +60,376 @@
 	}
 }
 
+/* ---- input, breadcrumbs, scope ---- */
+
+.barosaurus-modal .prompt-input-container {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding-left: var(--size-4-4);
+	background: transparent;
+}
+
+.barosaurus-modal .prompt-input {
+	font-size: var(--font-ui-large);
+	background: transparent;
+	padding: var(--size-4-4) var(--size-4-4) var(--size-4-4) 0;
+}
+
+/* Breadcrumb pills: one per pushed page, left of what you type. */
+.barosaurus-breadcrumbs {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	flex: 0 0 auto;
+}
+
+.barosaurus-breadcrumbs.is-empty {
+	display: none;
+}
+
+.barosaurus-crumb {
+	display: inline-flex;
+	align-items: baseline;
+	gap: var(--size-2-1);
+	max-width: 14em;
+	padding: var(--size-2-1) var(--size-4-2);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-hover);
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.barosaurus-crumb-value {
+	color: var(--text-normal);
+	font-weight: var(--font-medium);
+}
+
+/* Scope hint (">" commands, "@" this note) and the streaming state. */
+.barosaurus-status {
+	display: none;
+	padding: 0 var(--size-4-4) var(--size-4-1);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-medium);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+
+.barosaurus-status.is-visible {
+	display: block;
+}
+
+/* ---- the list ---- */
+
+.barosaurus-modal .prompt-results {
+	/* the pill is absolutely positioned against this */
+	position: relative;
+	padding: var(--size-4-2);
+}
+
+.barosaurus-modal .suggestion-item {
+	position: relative;
+	z-index: 1;
+	padding: 0;
+	background: transparent;
+	border-radius: var(--radius-m);
+}
+
+/* the pill replaces the theme's hard highlight */
+.barosaurus-modal .suggestion-item.is-selected {
+	background: transparent;
+}
+
+/* ---- group overlines ---- */
+
+/* A label occupies a row but is not a target: no hover, no pointer, no
+   selected look — the keyboard layer steps past it, the mouse cannot reach
+   it at all. */
+.barosaurus-modal .suggestion-item.barosaurus-group-row {
+	pointer-events: none;
+	background: transparent;
+	cursor: default;
+}
+
+.barosaurus-group {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	padding: var(--size-4-3) var(--size-4-2) var(--size-2-1);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-medium);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+
+/* the first group needs no air above it */
+.barosaurus-modal .suggestion-item:first-child .barosaurus-group {
+	padding-top: var(--size-2-1);
+}
+
+.barosaurus-group-icon {
+	display: flex;
+	align-items: center;
+	--icon-size: 12px;
+}
+
+/* ---- result rows ---- */
+
+.barosaurus-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-3);
+	padding: var(--size-2-2) var(--size-4-2);
+	min-height: 40px;
+}
+
+.barosaurus-label {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	flex: 1 1 auto;
+}
+
+.barosaurus-title {
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* obsidian's renderResults marks matches with .suggestion-highlight */
+.barosaurus-title .suggestion-highlight {
+	color: var(--text-accent);
+	font-weight: var(--font-semibold);
+	text-decoration: none;
+}
+
+.barosaurus-subtitle {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* things that do not exist yet (ghosts, create) stay quiet */
+.barosaurus-item.is-quiet .barosaurus-title {
+	color: var(--text-muted);
+}
+
+.barosaurus-trailing {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	flex-shrink: 0;
+}
+
+.barosaurus-hotkey,
+.barosaurus-index {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+	border-radius: var(--radius-s);
+	padding: 0 var(--size-2-1);
+	white-space: nowrap;
+}
+
+/* ⌘1–9 numbers exist always, appear only while the modifier is held */
+.barosaurus-index {
+	min-width: 1.4em;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+	opacity: 0;
+	transition: opacity 100ms ease;
+}
+
+.barosaurus-modal.mods-held .barosaurus-index {
+	opacity: 1;
+}
+
+/* ---- preview tiles ---- */
+
+.barosaurus-tile {
+	flex: 0 0 56px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-2-1);
+	border-radius: var(--radius-s);
+	background-color: var(--background-secondary);
+	color: var(--text-muted);
+	overflow: hidden;
+}
+
+.barosaurus-tile.mod-icon {
+	flex-basis: 32px;
+}
+
+.barosaurus-tile-icon {
+	display: flex;
+	align-items: center;
+	--icon-size: 14px;
+}
+
+/* Callouts pull the theme's own RGB triple; the fallback is Obsidian's
+   default palette. Variable names are not 1:1 with type names
+   (note→default, tip→important, danger→error …). */
+
+.barosaurus-tile.mod-callout {
+	background-color: rgba(var(--barosaurus-accent), 0.14);
+}
+
+.barosaurus-tile.mod-callout .barosaurus-tile-icon,
+.barosaurus-tile.mod-callout .barosaurus-tile-name {
+	color: rgb(var(--barosaurus-accent));
+}
+
+.mod-callout-note     { --barosaurus-accent: var(--callout-default, 68, 138, 255); }
+.mod-callout-abstract { --barosaurus-accent: var(--callout-summary, 0, 191, 188); }
+.mod-callout-info     { --barosaurus-accent: var(--callout-info, 0, 184, 212); }
+.mod-callout-todo     { --barosaurus-accent: var(--callout-todo, 0, 184, 212); }
+.mod-callout-tip      { --barosaurus-accent: var(--callout-important, 0, 191, 188); }
+.mod-callout-success  { --barosaurus-accent: var(--callout-success, 68, 207, 110); }
+.mod-callout-question { --barosaurus-accent: var(--callout-question, 236, 117, 0); }
+.mod-callout-warning  { --barosaurus-accent: var(--callout-warning, 236, 117, 0); }
+.mod-callout-failure  { --barosaurus-accent: var(--callout-fail, 233, 49, 71); }
+.mod-callout-danger   { --barosaurus-accent: var(--callout-error, 233, 49, 71); }
+.mod-callout-bug      { --barosaurus-accent: var(--callout-bug, 233, 49, 71); }
+.mod-callout-example  { --barosaurus-accent: var(--callout-example, 120, 82, 238); }
+.mod-callout-quote    { --barosaurus-accent: var(--callout-quote, 158, 158, 158); }
+
+.barosaurus-tile-name {
+	font-size: 9px;
+	font-weight: var(--font-semibold);
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Headings in their real (scaled) sizes and weights. */
+
+.barosaurus-tile.mod-heading {
+	color: var(--text-normal);
+}
+
+.barosaurus-tile.mod-h1 span { font-size: calc(var(--h1-size, 2em) * 0.5); font-weight: var(--h1-weight, 700); }
+.barosaurus-tile.mod-h2 span { font-size: calc(var(--h2-size, 1.6em) * 0.5); font-weight: var(--h2-weight, 600); }
+.barosaurus-tile.mod-h3 span { font-size: calc(var(--h3-size, 1.37em) * 0.5); font-weight: var(--h3-weight, 600); }
+
+.barosaurus-tile.mod-quote {
+	justify-content: flex-start;
+	padding-left: var(--size-4-2);
+}
+
+.barosaurus-tile.mod-quote span {
+	font-style: italic;
+	border-left: 2px solid var(--blockquote-border-color, var(--interactive-accent));
+	padding-left: var(--size-2-2);
+}
+
+.barosaurus-tile.mod-code {
+	background-color: var(--code-background, var(--background-secondary));
+}
+
+.barosaurus-tile-mono {
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+}
+
+.barosaurus-tile.mod-list {
+	flex-direction: column;
+	align-items: stretch;
+	justify-content: center;
+	gap: 3px;
+	padding: 0 var(--size-4-2);
+}
+
+.barosaurus-tile-line {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.barosaurus-tile-marker {
+	font-size: 8px;
+	line-height: 1;
+	color: var(--text-muted);
+}
+
+.barosaurus-tile-checkbox {
+	width: 6px;
+	height: 6px;
+	border: 1px solid var(--checkbox-border-color, var(--text-muted));
+	border-radius: 2px;
+}
+
+.barosaurus-tile-bar {
+	flex: 1;
+	height: 2px;
+	border-radius: 1px;
+	background-color: var(--text-faint);
+	opacity: 0.5;
+}
+
+.barosaurus-tile-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 1px;
+	width: 32px;
+	height: 16px;
+	background-color: var(--table-border-color, var(--background-modifier-border));
+	border: 1px solid var(--table-border-color, var(--background-modifier-border));
+	border-radius: 2px;
+	overflow: hidden;
+}
+
+.barosaurus-tile-grid div {
+	background-color: var(--background-primary);
+}
+
+.barosaurus-tile-hr {
+	width: 60%;
+	height: var(--hr-thickness, 2px);
+	border-radius: 1px;
+	background-color: var(--hr-color, var(--background-modifier-border));
+}
+
+.barosaurus-tile-swatch {
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+}
+
+.barosaurus-tile.mod-thumbnail {
+	background-color: var(--background-secondary);
+}
+
+.barosaurus-tile.mod-thumbnail img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+/* ---- footer ---- */
+
+.barosaurus-modal .prompt-instructions {
+	padding: var(--size-2-2) var(--size-4-3);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	border-top: var(--border-width) solid
+		color-mix(in srgb, var(--background-modifier-border) 55%, transparent);
+}
+
 /* ---- the gliding selection pill ---- */
 
 .barosaurus-pill {
@@ -80,6 +450,13 @@
 
 .barosaurus-pill.is-teleporting {
 	transition: none;
+}
+
+/* Fallback when the pill could not mount or could not measure a row: the
+   selection must never be invisible. Group labels stay excluded — they are
+   not a target. */
+.barosaurus-modal.barosaurus-no-pill .suggestion-item.is-selected:not(.barosaurus-group-row) {
+	background: var(--background-modifier-hover);
 }
 
 /* ---- mobile ---- */
@@ -111,6 +488,34 @@ body.is-phone .barosaurus-pill {
 body.is-phone .barosaurus-modal .prompt-results {
 	padding: var(--size-4-1) var(--size-4-2)
 		calc(var(--size-4-4) + env(safe-area-inset-bottom, 0px));
+}
+
+/* Roomier input, clear of the top edge; shorter crumbs so the field keeps
+   most of the width. */
+body.is-phone .barosaurus-modal .prompt-input {
+	padding: var(--size-4-3) var(--size-4-4) var(--size-4-3) 0;
+	font-size: var(--font-ui-medium);
+}
+
+body.is-phone .barosaurus-crumb {
+	max-width: 8em;
+}
+
+/* No pill on phones, so selection needs the plain highlight back. */
+body.is-phone .barosaurus-modal .suggestion-item.is-selected:not(.barosaurus-group-row) {
+	background: var(--background-modifier-hover);
+}
+
+/* Touch-friendly targets. */
+body.is-mobile .barosaurus-row {
+	min-height: 44px;
+	padding: var(--size-4-2) var(--size-4-3);
+}
+
+/* Keyboard hints and held-modifier badges mean nothing on touch. */
+body.is-mobile .barosaurus-modal .prompt-instructions,
+body.is-mobile .barosaurus-index {
+	display: none;
 }
 
 /* ---- restraint ---- */

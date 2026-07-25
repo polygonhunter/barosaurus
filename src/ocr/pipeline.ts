@@ -1,0 +1,271 @@
+import { Notice, Platform, loadPdfJs, type App, type Plugin, type TFile } from "obsidian";
+import type { SearchEngine } from "../core/engine";
+import { kindForExtension } from "../core/index-types";
+import { idleScheduler, OcrQueue } from "../core/ocr-queue";
+import { isPathExcluded } from "../core/paths";
+import { attachmentDoc } from "../index/content";
+import type { BarosaurusSettings } from "../settings";
+import { assetsPresent, ensureAssets } from "./assets";
+import { OcrCache } from "./ocr-cache";
+// Type-only: tesseract.js must not be evaluated at plugin load — it is
+// desktop-only and pulls in a worker. Loaded lazily on the first image job.
+import type { OcrService } from "./ocr-service";
+
+/** Hard cap per file — extracted text is a low-weight helper field. */
+const MAX_EXTRACTED_CHARS = 20_000;
+const MAX_PDF_PAGES = 100;
+/** Files considered per sweep chunk before yielding, as in the indexer. */
+const SWEEP_CHUNK_SIZE = 20;
+
+/**
+ * What the settings tab needs from the pipeline: switch extraction on (which
+ * may involve the one-time model download) and off again. Kept as its own
+ * interface so settings.ts never has to import the pipeline itself.
+ */
+export interface OcrController {
+	/** Fetch the models if needed, then sweep the vault. Returns success. */
+	enable(): Promise<boolean>;
+	/** Stop extraction, release the worker, flush the cache. */
+	disable(): Promise<void>;
+}
+
+/**
+ * Background text extraction: images through tesseract, PDFs through
+ * Obsidian's bundled pdf.js. Runs in idle time, one file at a time, and
+ * every result lands in the synced ocr-cache.json — so no file is ever
+ * recognized twice, on any device.
+ *
+ * Wiring (main.ts):
+ *   const pipeline = new OcrPipeline(app, engine, () => this.settings,
+ *                                    this.manifest.dir ?? "",
+ *                                    () => indexer.persistSoon());
+ *   await pipeline.init(this);          // onLayoutReady
+ *   this.ocr = pipeline;                // lets the settings tab drive it
+ *   indexer → pipeline.consider(file, "high")  // per (re)indexed attachment
+ *   await pipeline.destroy();           // onunload
+ *
+ * Nothing here touches the network until the user opts in: `consider` returns
+ * immediately while both switches are off, and `enable` is only ever called
+ * from the settings toggle.
+ */
+export class OcrPipeline implements OcrController {
+	private readonly queue = new OcrQueue(idleScheduler(window));
+	private readonly cache: OcrCache;
+	private service: OcrService | null = null;
+	private missingAssetsWarned = false;
+	private sweeping = false;
+
+	constructor(
+		private readonly app: App,
+		private readonly engine: SearchEngine,
+		private readonly getSettings: () => BarosaurusSettings,
+		private readonly manifestDir: string,
+		private readonly persistSoon: () => void,
+	) {
+		this.cache = new OcrCache(app, manifestDir);
+	}
+
+	/** Instantiate tesseract on first use only (desktop recognition path). */
+	private async getService(): Promise<OcrService> {
+		if (!this.service) {
+			const { OcrService: Service } = await import("./ocr-service");
+			this.service = new Service(this.app, this.manifestDir);
+		}
+		return this.service;
+	}
+
+	async init(plugin: Plugin): Promise<void> {
+		await this.cache.load();
+		plugin.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				this.cache.remove(file.path);
+				this.queue.drop(file.path);
+			}),
+		);
+		plugin.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				this.cache.rename(oldPath, file.path);
+				this.queue.drop(oldPath);
+			}),
+		);
+	}
+
+	// ------------------------------------------------------------ switching on
+
+	/**
+	 * Called when the user switches text extraction on. Downloads the
+	 * recognition models if OCR is wanted and they are not there yet — the
+	 * only network request this plugin ever makes — then sweeps the vault.
+	 */
+	async enable(): Promise<boolean> {
+		const settings = this.getSettings();
+		const wantsOcr = settings.ocrEnabled && Platform.isDesktop;
+		if (wantsOcr && !(await ensureAssets(this.app, this.manifestDir))) return false;
+		this.missingAssetsWarned = false;
+		this.queue.resume();
+		await this.scanVault();
+		return true;
+	}
+
+	/** Stop extraction and release the worker; re-enabling picks up again. */
+	async disable(): Promise<void> {
+		this.queue.clear();
+		await this.service?.terminate();
+		this.service = null;
+		await this.cache.save();
+	}
+
+	/** Plugin unload. */
+	async destroy(): Promise<void> {
+		await this.disable();
+	}
+
+	// ------------------------------------------------------------ eligibility
+
+	/**
+	 * Enqueue every eligible attachment. Yields to the UI thread every chunk
+	 * the way the indexer does, so a vault full of images does not freeze
+	 * Obsidian while the sweep walks it.
+	 */
+	async scanVault(priority: "high" | "low" = "low"): Promise<void> {
+		if (this.sweeping) return;
+		this.sweeping = true;
+		try {
+			const excluded = this.getSettings().excludedFolders;
+			let sinceYield = 0;
+			for (const file of this.app.vault.getFiles()) {
+				if (isPathExcluded(file.path, excluded)) continue;
+				this.consider(file, priority);
+				if (++sinceYield >= SWEEP_CHUNK_SIZE) {
+					sinceYield = 0;
+					// setTimeout(0), NOT requestIdleCallback: the latter does not
+					// exist on every mobile platform we ship to. `window` and not
+					// `activeWindow` on purpose — this loop must survive a popout
+					// being closed mid-sweep.
+					await new Promise((resolve) => window.setTimeout(resolve, 0));
+				}
+			}
+		} finally {
+			this.sweeping = false;
+		}
+	}
+
+	/** Called by the indexer for every attachment it (re)indexes. */
+	consider(file: TFile, priority: "high" | "low"): void {
+		const settings = this.getSettings();
+		const kind = kindForExtension(file.extension);
+		if (kind === "image") {
+			// Recognition is desktop-only; on a phone the switch is off and
+			// disabled, and text recognized on a desktop syncs over anyway.
+			if (!settings.ocrEnabled || !Platform.isDesktop) return;
+			this.considerImage(file, settings.ocrLanguages.join("+"), priority);
+			return;
+		}
+		if (kind === "file" && file.extension.toLowerCase() === "pdf" && settings.indexPdfText) {
+			this.considerPdf(file, priority);
+		}
+	}
+
+	private considerImage(file: TFile, langs: string, priority: "high" | "low"): void {
+		const cached = this.cache.get(file.path, file.stat.mtime, file.stat.size, langs);
+		if (cached !== null) {
+			this.apply(file, cached);
+			return;
+		}
+		this.queue.push(
+			file.path,
+			async () => {
+				if (!(await this.assetsReady())) return;
+				const url = this.app.vault.getResourcePath(file);
+				const service = await this.getService();
+				const text = await service.recognize(url, langs);
+				this.cache.set(file.path, {
+					mtime: file.stat.mtime,
+					size: file.stat.size,
+					langs,
+					text,
+				});
+				this.apply(file, text);
+				await this.cache.save();
+			},
+			priority,
+		);
+	}
+
+	private considerPdf(file: TFile, priority: "high" | "low"): void {
+		// PDFs are language-independent — keyed with a fixed marker.
+		const cached = this.cache.get(file.path, file.stat.mtime, file.stat.size, "pdf");
+		if (cached !== null) {
+			this.apply(file, cached);
+			return;
+		}
+		this.queue.push(
+			file.path,
+			async () => {
+				const text = await this.extractPdfText(file);
+				this.cache.set(file.path, {
+					mtime: file.stat.mtime,
+					size: file.stat.size,
+					langs: "pdf",
+					text,
+				});
+				this.apply(file, text);
+				await this.cache.save();
+			},
+			priority,
+		);
+	}
+
+	private async extractPdfText(file: TFile): Promise<string> {
+		try {
+			const pdfjs = (await loadPdfJs()) as {
+				getDocument(options: { data: ArrayBuffer }): {
+					promise: Promise<{
+						numPages: number;
+						getPage(n: number): Promise<{
+							getTextContent(): Promise<{ items: Array<{ str?: string }> }>;
+						}>;
+					}>;
+				};
+			};
+			const data = await this.app.vault.readBinary(file);
+			const doc = await pdfjs.getDocument({ data }).promise;
+			const parts: string[] = [];
+			let length = 0;
+			const pages = Math.min(doc.numPages, MAX_PDF_PAGES);
+			for (let n = 1; n <= pages && length < MAX_EXTRACTED_CHARS; n++) {
+				const page = await doc.getPage(n);
+				const content = await page.getTextContent();
+				const pageText = content.items
+					.map((item) => item.str ?? "")
+					.join(" ")
+					.trim();
+				parts.push(pageText);
+				length += pageText.length;
+			}
+			return parts.join("\n").trim();
+		} catch {
+			// Scanned or encrypted PDFs simply carry no text layer. Nothing
+			// went wrong from the user's point of view, so nothing is said.
+			return "";
+		}
+	}
+
+	/** Push extracted text into the index and schedule persistence. */
+	private apply(file: TFile, text: string): void {
+		this.engine.upsert(attachmentDoc(file, text.slice(0, MAX_EXTRACTED_CHARS)));
+		this.persistSoon();
+	}
+
+	private async assetsReady(): Promise<boolean> {
+		const present = await assetsPresent(this.app, this.manifestDir);
+		if (!present && !this.missingAssetsWarned) {
+			this.missingAssetsWarned = true;
+			new Notice(
+				"Barosaurus: reading text in images is switched on, but its models are missing — download them again from the settings.",
+				8000,
+			);
+		}
+		return present;
+	}
+}

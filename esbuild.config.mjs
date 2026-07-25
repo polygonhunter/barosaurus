@@ -28,6 +28,18 @@ if (!prod) {
 	fs.copyFileSync("manifest.json", path.join(devPluginDir, "manifest.json"));
 	fs.copyFileSync("styles.css", path.join(devPluginDir, "styles.css"));
 	fs.writeFileSync(path.join(devPluginDir, ".hotreload"), "");
+	// OCR runtime assets (tesseract worker/core/traineddata) are lazy-downloaded
+	// in production; in dev they are copied straight into the plugin dir so the
+	// download path never has to run against a local build. Populate them first
+	// with `npm run fetch-ocr-assets`; absent, this block is a no-op.
+	const assetsDir = path.join("assets", "ocr");
+	if (fs.existsSync(assetsDir)) {
+		const target = path.join(devPluginDir, "assets");
+		fs.mkdirSync(target, { recursive: true });
+		for (const f of fs.readdirSync(assetsDir)) {
+			fs.copyFileSync(path.join(assetsDir, f), path.join(target, f));
+		}
+	}
 }
 
 const context = await esbuild.context({

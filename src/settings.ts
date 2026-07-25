@@ -1,6 +1,7 @@
-import { PluginSettingTab, Setting, type App, type Plugin } from "obsidian";
+import { Platform, PluginSettingTab, Setting, type App, type Plugin } from "obsidian";
 import type { UserSnippet } from "./core/blocks";
 import type { ColorMode } from "./core/style";
+import type { OcrController } from "./ocr/pipeline";
 
 /**
  * Settings for Barosaurus.
@@ -54,6 +55,14 @@ export interface BarosaurusSettings {
 	/** Folders skipped entirely, one per line. */
 	excludedFolders: string[];
 
+	// ---- text extraction (opt-in, nothing downloads or runs until switched on)
+	/** Recognize text inside images. Desktop only; needs the model download. */
+	ocrEnabled: boolean;
+	/** Read the text layer of PDFs. Independent of OCR — no download needed. */
+	indexPdfText: boolean;
+	/** Recognition models to use, e.g. ["deu", "eng"]. */
+	ocrLanguages: string[];
+
 	// ---- persistence of user state
 	/** Ids the user pinned to the top. */
 	pins: string[];
@@ -76,6 +85,11 @@ export const DEFAULT_SETTINGS: BarosaurusSettings = {
 	dateFormat: "YYYY-MM-DD",
 	snippets: [],
 	excludedFolders: [],
+	// Opt-in means opt-in: both start off, so a fresh install makes no network
+	// request and does no background recognition until asked to.
+	ocrEnabled: false,
+	indexPdfText: false,
+	ocrLanguages: ["deu", "eng"],
 	pins: [],
 	hiddenCommands: [],
 };
@@ -90,6 +104,12 @@ export interface SettingsHost extends Plugin {
 	rebuildIndex(): Promise<void>;
 	/** Open the contact form with version and platform prefilled. */
 	openSupport(): void;
+	/**
+	 * Text extraction from images and PDFs, if the plugin wired one up. Left
+	 * optional so the settings tab degrades to "the switches are remembered,
+	 * nothing acts on them" rather than throwing.
+	 */
+	ocr?: OcrController;
 }
 
 /** Sources the user can switch off, with a label and why they might want to. */
@@ -126,6 +146,7 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 		this.renderRanking(settings);
 		this.renderEditing(settings);
 		this.renderIndexing(settings);
+		this.renderTextExtraction(settings);
 		this.renderAbout();
 	}
 
@@ -469,6 +490,90 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 					button.setDisabled(false).setButtonText("Rebuild");
 				}),
 			);
+	}
+
+	// ------------------------------------------------------ text extraction
+
+	private renderTextExtraction(settings: BarosaurusSettings): void {
+		const { containerEl } = this;
+		new Setting(containerEl).setName("Text in images and PDFs").setHeading();
+
+		new Setting(containerEl)
+			.setName("Read text inside images")
+			.setDesc(
+				Platform.isDesktop
+					? "Make the words in screenshots and photos searchable. Switching this on downloads the " +
+							"recognition models once, about 8 MB, from this plugin's GitHub release — the only " +
+							"network request Barosaurus ever makes. Everything after that happens offline on your own " +
+							"machine, in the background, and each image is read only once."
+					: "Reading text inside images needs a desktop or laptop: the recognition models do not run " +
+							"on phones and tablets. Anything already read on a desktop syncs across and stays " +
+							"searchable here.",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(settings.ocrEnabled)
+					.setDisabled(!Platform.isDesktop)
+					.onChange(async (value) => {
+						settings.ocrEnabled = value;
+						await this.persist();
+						this.display();
+						await this.applyExtractionChange();
+					}),
+			);
+
+		if (settings.ocrEnabled && Platform.isDesktop) {
+			new Setting(containerEl)
+				.setName("Recognition languages")
+				.setDesc(
+					"Which languages to expect in your images. The download carries German and English; " +
+						"reading both is slower than reading one, so pick a single language if your images " +
+						"only ever use it.",
+				)
+				.addDropdown((dropdown) =>
+					dropdown
+						.addOption("deu+eng", "German and English")
+						.addOption("deu", "German")
+						.addOption("eng", "English")
+						.setValue(settings.ocrLanguages.join("+"))
+						.onChange(async (value) => {
+							settings.ocrLanguages = value.split("+");
+							await this.persist();
+							await this.applyExtractionChange();
+						}),
+				);
+		}
+
+		new Setting(containerEl)
+			.setName("Read text inside PDFs")
+			.setDesc(
+				"Search the contents of your PDFs, not just their filenames. Most PDFs already carry a real " +
+					"text layer, so this needs no recognition and no download, and it works on every device. " +
+					"Scanned PDFs that are nothing but images stay unsearchable.",
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(settings.indexPdfText).onChange(async (value) => {
+					settings.indexPdfText = value;
+					await this.persist();
+					await this.applyExtractionChange();
+				}),
+			);
+	}
+
+	/**
+	 * Apply a change to either extraction switch: stop what is running, then —
+	 * if anything is still switched on — fetch what it needs and walk the
+	 * vault. Does nothing at all while both switches are off, which is what
+	 * keeps a default install free of network requests.
+	 */
+	private async applyExtractionChange(): Promise<void> {
+		const controller = this.host.ocr;
+		if (!controller) return;
+		const settings = this.host.settings;
+		await controller.disable();
+		if (settings.ocrEnabled || settings.indexPdfText) {
+			await controller.enable();
+		}
 	}
 
 	// --------------------------------------------------------------- about

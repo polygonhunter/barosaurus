@@ -68,9 +68,9 @@ export interface IndexedDoc {
 	/** Note body. Indexed but NOT stored — snippets are read lazily. */
 	body: string;
 	/**
-	 * Text pulled out of a binary attachment. Barosaurus ships no OCR/PDF
-	 * pipeline, so nothing fills this today; the field and its weight are the
-	 * extension point (see `attachmentDoc` in src/index/content.ts).
+	 * Text pulled out of a binary attachment: OCR for images, the text layer
+	 * for PDFs. Filled by `src/ocr/pipeline.ts` when the user opts in, empty
+	 * otherwise. Weighted below body text — recognized text is noisier.
 	 */
 	extractedText: string;
 	/** External URL (link docs only). */

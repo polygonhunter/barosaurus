@@ -32,8 +32,8 @@ function emptyDoc(file: TFile): IndexedDoc {
 
 /**
  * Attachment doc: searchable by filename, plus whatever text an extractor
- * managed to pull out of it. Barosaurus has no OCR/PDF pipeline, so
- * `extractedText` is empty today — this is the seam where one would land.
+ * managed to pull out of it. `src/ocr/pipeline.ts` fills `extractedText` for
+ * images and PDFs once the user opts in; it stays empty otherwise.
  */
 export function attachmentDoc(file: TFile, extractedText = ""): IndexedDoc {
 	const doc = emptyDoc(file);

@@ -116,6 +116,39 @@ console errors.
 **If it fails:** `loadIfDeferred()` before reading, accepting the cost, or fall back to
 listing only non-deferred leaves and letting the files source cover the rest.
 
+## 7. ☐ Moving the selection past a group header
+
+**Assumption:** re-dispatching a synthetic `ArrowDown` on the input moves Obsidian's own
+selection, so the bar can skip over a group label by dispatching twice.
+
+There is no public setter for the highlighted suggestion, and `src/ui/unsafe.ts` exposes
+`chooser.useSelectedItem` but no `setSelectedItem`. So `navigate()` swallows the real
+arrow key and re-dispatches one or two synthetic ones, with a MutationObserver as a safety
+net that nudges once more (budget 3) if the selection still sits on a label. The same net
+covers the first render, where Obsidian selects row 0 — which is always a header.
+
+**Check:** open the bar with results in at least three groups. Hold ↓ from the top to the
+bottom and back up. The highlight must never rest on a group label, must not skip a real
+row, and must not stutter or flicker. Repeat with `⌃N` / `⌃P`.
+
+**If it fails:** add `setSelectedItem` to the chooser accessor in `src/ui/unsafe.ts` and
+swap the one line in `navigate()`. If the internal is absent too, fall back to rendering
+group labels as a non-row element (a sticky heading outside the list), which costs the
+grouped-list look but removes the problem entirely.
+
+## 8. ☐ Escape reaching our handler before Modal's
+
+**Assumption:** `Modal` registers its own Escape handler in the constructor, and our later
+`scope.register` for Escape takes precedence — so Esc pops one page instead of closing the
+whole bar.
+
+**Check:** open the bar, run "Move to…" to push a folder picker, press Esc once. Expected:
+back to the result list with the query intact. Wrong: the bar closes outright.
+
+**If it fails:** the degraded behaviour is the default expectation anyway (Esc closes), so
+this is not a crash — but the fix is to intercept Escape on the capture-phase `inputEl`
+listener that already handles the arrow keys, rather than through the scope.
+
 ## Also worth recording during the spike
 
 - Whether `checkCallback(true)` is safe to call for every registered command at query time,
