@@ -1,7 +1,7 @@
 {
 	"name": "barosaurus",
 	"version": "0.1.0",
-	"description": "One bar for everything — search, navigate, and act from a single command bar.",
+	"description": "One bar for everything — search, navigate and act from a single command bar.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

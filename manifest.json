@@ -3,7 +3,7 @@
 	"name": "Barosaurus",
 	"version": "0.1.0",
 	"minAppVersion": "1.12.4",
-	"description": "One bar for everything — search notes, run commands, and act on what you find from a single field that ranks by what you are actually doing.",
+	"description": "One bar for everything — select text and type b for bold, jump to any note, move it to a folder, run any command. Notes, commands and open tabs in one list, ranked by what you are doing right now.",
 	"author": "polygonhunter",
 	"isDesktopOnly": false
 }
