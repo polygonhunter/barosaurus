@@ -31,7 +31,7 @@ const ASSET_RELEASE_URL =
  * executes, so an unverified download is arbitrary code execution. Dev builds
  * never reach this path — esbuild pre-copies assets/ocr into the test vault.
  */
-const ASSET_SHA256 = "";
+const ASSET_SHA256 = "005cfbe910b837de0e330f876fe9405898f2068a2813c3a1bfb5e11a3f3ca71e";
 
 export function assetDir(manifestDir: string): string {
 	return normalizePath(`${manifestDir}/assets`);
