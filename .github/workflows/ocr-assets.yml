@@ -1,0 +1,89 @@
+name: Publish OCR assets
+
+# Builds the text-recognition model archive and publishes it as the
+# `ocr-assets-v1` release, then prints the sha256 that must be pinned in
+# src/ocr/assets.ts.
+#
+# Deliberately manual and separate from the plugin release: the archive
+# changes only when tesseract.js or the pinned tessdata commit changes, and
+# the plugin verifies it by digest, so republishing it casually would break
+# every installed copy.
+#
+# The plugin executes what is in this archive (a Web Worker plus a WASM core),
+# which is why scripts/fetch-ocr-assets.mjs pins tessdata to a commit and
+# verifies every downloaded file before it goes in.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish the archive under"
+        required: true
+        default: "ocr-assets-v1"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch and verify the assets
+        run: npm run fetch-ocr-assets
+
+      - name: Build the archive
+        id: archive
+        run: |
+          cd assets/ocr
+          # Flat archive: assets.ts unzips these four names straight into the
+          # plugin directory. -X drops extra file attributes so the archive
+          # depends only on its contents.
+          zip -X -9 ../../barosaurus-ocr-assets.zip \
+            worker.min.js \
+            tesseract-core-simd-lstm.wasm.js \
+            deu.traineddata.gz \
+            eng.traineddata.gz
+          cd ../..
+          DIGEST=$(sha256sum barosaurus-ocr-assets.zip | cut -d' ' -f1)
+          echo "sha256=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Pin this in src/ocr/assets.ts::$DIGEST"
+          ls -la barosaurus-ocr-assets.zip
+
+      - name: Publish the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          DIGEST: ${{ steps.archive.outputs.sha256 }}
+        run: |
+          # The digest goes in the release body as well as the log, so the
+          # value that has to be pinned is readable without opening a run.
+          NOTES="Offline text-recognition models for Barosaurus.
+
+          Downloaded once, only when a user switches text recognition on, and
+          verified against this digest before anything is unpacked or run.
+
+          \`\`\`
+          sha256  $DIGEST
+          \`\`\`
+
+          Contents: tesseract.js worker and WASM core, plus the German and
+          English \`tessdata_fast\` models, pinned to a fixed upstream commit
+          and checksum-verified at build time (see scripts/fetch-ocr-assets.mjs)."
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" barosaurus-ocr-assets.zip --clobber
+            gh release edit "$TAG" --notes "$NOTES"
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes "$NOTES" \
+              barosaurus-ocr-assets.zip
+          fi

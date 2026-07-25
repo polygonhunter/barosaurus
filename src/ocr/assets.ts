@@ -22,15 +22,14 @@ const ASSET_RELEASE_URL =
 	"https://github.com/polygonhunter/barosaurus/releases/download/ocr-assets-v1/barosaurus-ocr-assets.zip";
 
 /**
- * Pin before every ocr-assets release: sha256 of the zip. Empty string
- * skips verification (dev builds, where esbuild pre-copies the files).
+ * sha256 of the release zip, re-pinned whenever the ocr-assets release is
+ * rebuilt. Produced by `npm run fetch-ocr-assets` + `shasum -a 256`.
  *
- * TODO(release): Barosaurus has no ocr-assets release yet, so this is empty
- * and the download is UNVERIFIED. Before the first release that ships OCR,
- * build the zip via `npm run fetch-ocr-assets`, upload it as the
- * `ocr-assets-v1` release asset, and paste its `shasum -a 256` here. Shipping
- * an OCR-capable build with this string still empty means users would execute
- * whatever that URL happens to serve.
+ * An empty value means REFUSE, not "skip the check". The inherited behaviour
+ * was the opposite, and it is the wrong default by a wide margin: what this
+ * archive contains is a Web Worker and a WASM core that the plugin then
+ * executes, so an unverified download is arbitrary code execution. Dev builds
+ * never reach this path — esbuild pre-copies assets/ocr into the test vault.
  */
 const ASSET_SHA256 = "";
 
@@ -48,19 +47,27 @@ export async function assetsPresent(app: App, manifestDir: string): Promise<bool
 
 /** Download + verify + unzip into the plugin dir. Throws on failure. */
 export async function downloadAssets(app: App, manifestDir: string): Promise<void> {
+	// Refuse before touching the network at all, rather than downloading and
+	// then discovering we have nothing to compare against.
+	if (ASSET_SHA256.length === 0) {
+		throw new Error(
+			"text recognition is not available in this build — no verified model archive is pinned",
+		);
+	}
+
 	const notice = new Notice("Barosaurus: downloading text-recognition models…", 0);
 	try {
 		const response = await requestUrl({ url: ASSET_RELEASE_URL, method: "GET" });
 		const zipData = new Uint8Array(response.arrayBuffer);
 
-		if (ASSET_SHA256.length > 0) {
-			const digest = await crypto.subtle.digest("SHA-256", zipData);
-			const hex = [...new Uint8Array(digest)]
-				.map((b) => b.toString(16).padStart(2, "0"))
-				.join("");
-			if (hex !== ASSET_SHA256) {
-				throw new Error("OCR asset checksum mismatch");
-			}
+		// activeWindow.crypto, not the bare global — the plugin runs in popout
+		// windows too, and CLAUDE.md forbids the globals for exactly that reason.
+		const digest = await activeWindow.crypto.subtle.digest("SHA-256", zipData);
+		const hex = [...new Uint8Array(digest)]
+			.map((b) => b.toString(16).padStart(2, "0"))
+			.join("");
+		if (hex !== ASSET_SHA256) {
+			throw new Error("model archive failed verification — refusing to install it");
 		}
 
 		const files = unzipSync(zipData);
