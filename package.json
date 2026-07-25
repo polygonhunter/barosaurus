@@ -1,0 +1,31 @@
+{
+	"name": "barosaurus",
+	"version": "0.1.0",
+	"description": "One bar for everything — search, navigate, and act from a single command bar.",
+	"main": "main.js",
+	"type": "module",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"version": "node version-bump.mjs && git add manifest.json versions.json"
+	},
+	"keywords": [
+		"obsidian",
+		"command-palette",
+		"launcher"
+	],
+	"author": "polygonhunter",
+	"license": "MIT",
+	"dependencies": {
+		"minisearch": "^7.1.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22",
+		"esbuild": "0.25.5",
+		"obsidian": "latest",
+		"typescript": "^5.8.3",
+		"vitest": "^3.2.4"
+	}
+}

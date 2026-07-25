@@ -1,0 +1,9 @@
+{
+	"id": "barosaurus",
+	"name": "Barosaurus",
+	"version": "0.1.0",
+	"minAppVersion": "1.12.4",
+	"description": "One bar for everything — search notes, run commands, and act on what you find from a single field that ranks by what you are actually doing.",
+	"author": "polygonhunter",
+	"isDesktopOnly": false
+}
