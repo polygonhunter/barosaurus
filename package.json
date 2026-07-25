@@ -9,6 +9,7 @@
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"fetch-ocr-assets": "node scripts/fetch-ocr-assets.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [
@@ -19,7 +20,9 @@
 	"author": "polygonhunter",
 	"license": "MIT",
 	"dependencies": {
-		"minisearch": "^7.1.0"
+		"fflate": "^0.8.2",
+		"minisearch": "^7.1.0",
+		"tesseract.js": "^6.0.1"
 	},
 	"devDependencies": {
 		"@types/node": "^22",

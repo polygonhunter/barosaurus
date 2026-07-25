@@ -120,7 +120,13 @@ describe("unwrapping", () => {
 
 	it("strips our own wrappers", () => {
 		expect(unwrapForeground(RED_SPAN)).toBe("text");
+		// NOTE: in THEME mode this currently succeeds through the legacy <mark>
+		// pattern — OURS_BACKGROUND_RE's `rgba\([^)]*\)` stops at the inner
+		// `var(…)` paren and never matches our own output. Keep both patterns.
 		expect(unwrapBackground(RED_MARK)).toBe("text");
+		expect(unwrapBackground('<mark style="background: rgba(233, 49, 71, 0.2);">text</mark>')).toBe(
+			"text",
+		);
 		expect(unwrapAlignment(CENTER_DIV)).toBe("text");
 	});
 
