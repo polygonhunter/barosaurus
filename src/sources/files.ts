@@ -69,6 +69,11 @@ export interface Scorable<T> {
  * Prefilter, score, order, cap. Returns the values only — the caller wraps
  * them with `candidatesFromOrdered`, so the [0,1] normalization stays
  * positional and no native score ever leaks into the cross-source comparison.
+ *
+ * The SearchResult is deliberately NOT passed on to the renderer: it was
+ * computed against FOLDED text, whose offsets do not line up with the title
+ * the user sees (ß→ss and NFD stripping both change the length). The modal's
+ * own fallback highlighter runs against the real title and is correct.
  */
 export function orderByMatch<T>(
 	entries: readonly Scorable<T>[],
@@ -148,7 +153,6 @@ function tileFor(kind: ResultKind, path: string, extension: string): TileSpec {
 	if (kind === "image") return { kind: "thumbnail", path };
 	if (kind === "note") return { kind: "icon", icon: "file-text" };
 	if (extension === "canvas") return { kind: "icon", icon: "layout-dashboard" };
-	if (extension === "pdf") return { kind: "icon", icon: "file-type-2" };
 	return { kind: "icon", icon: "file" };
 }
 

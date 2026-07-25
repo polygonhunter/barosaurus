@@ -550,7 +550,8 @@ export function capabilities(app: unknown): UnsafeCapabilities {
 			hasMethod(field(app, "hotkeyManager"), "getHotkeys") ||
 			hasMethod(field(app, "hotkeyManager"), "getDefaultHotkeys"),
 		communityPlugins:
-			field(field(app, "plugins"), "enabledPlugins") !== undefined ||
+			field(field(app, "plugins"), "enabledPlugins") instanceof Set ||
+			Array.isArray(field(field(app, "plugins"), "enabledPlugins")) ||
 			dict(field(field(app, "plugins"), "plugins")) !== null,
 		internalPlugins:
 			hasMethod(internalPluginRegistry(app), "getPluginById") ||

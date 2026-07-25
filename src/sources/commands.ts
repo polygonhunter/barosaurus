@@ -64,14 +64,16 @@ export function runnability(app: App, command: Command): Runnability {
 		if (command.editorCheckCallback !== undefined) {
 			if (info === null || editor === undefined) return { runnable: false, editorCommand };
 			const answer: unknown = command.editorCheckCallback(true, editor, info);
-			return { runnable: answer === true, editorCommand };
+			// Truthiness, not `=== true`: that is the gate Obsidian's own palette
+			// applies, and plugins do return truthy non-booleans.
+			return { runnable: Boolean(answer), editorCommand };
 		}
 		if (command.editorCallback !== undefined) {
 			return { runnable: info !== null && editor !== undefined, editorCommand };
 		}
 		if (command.checkCallback !== undefined) {
 			const answer: unknown = command.checkCallback(true);
-			return { runnable: answer === true, editorCommand };
+			return { runnable: Boolean(answer), editorCommand };
 		}
 	} catch (error) {
 		console.error(`[barosaurus] command "${command.id}" threw while checking availability`, error);
@@ -255,19 +257,18 @@ export const commandsSource: Source = {
 
 		// The oracle runs on matches only — a vault with a thousand commands
 		// would otherwise pay for every check callback on every keystroke.
-		const available: OmniItem[] = [];
+		// Pinned commands lead, stably: each keeps its relative match order, and
+		// leading this source's own list never overrides a tier, because the
+		// ranker compares tiers first and norms only within one.
+		const lead: OmniItem[] = [];
+		const rest: OmniItem[] = [];
 		for (const entry of matched) {
 			const { runnable, editorCommand } = runnability(app, entry.command);
 			if (!runnable) continue;
-			available.push(itemFor(app, entry, editorCommand));
-			if (available.length >= limit * 2) break;
+			(entry.pinned ? lead : rest).push(itemFor(app, entry, editorCommand));
+			if (lead.length + rest.length >= limit * 2) break;
 		}
 
-		// Pinned lead, stably: a pinned command keeps its relative match order
-		// and never jumps a better-matching tier, because tiers dominate later.
-		const pinnedIds = new Set(getPinnedCommandIds(app).map((id) => `command:${id}`));
-		const lead = available.filter((item) => pinnedIds.has(item.id));
-		const rest = available.filter((item) => !pinnedIds.has(item.id));
 		return candidatesFromOrdered([...lead, ...rest].slice(0, limit));
 	},
 };

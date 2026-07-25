@@ -74,8 +74,15 @@ export interface OmnibarOptions {
 	sources: readonly (Source | StreamingSource)[];
 	/** The editing situation, re-read on every keystroke. */
 	context?: () => BarContext;
-	/** Frecency, pins and context boosts, re-read on every keystroke. */
+	/** Frecency and pins, re-read on every keystroke. */
 	rankOptions?: () => RankOptions;
+	/**
+	 * Per-item boosts from the editing situation — the reason "b" finds Bold
+	 * while text is selected. It has to be a callback rather than a value on
+	 * RankOptions because it needs the candidate list, which only exists here.
+	 * Omitted when the user has switched context ranking off.
+	 */
+	contextBoostFor?: (items: readonly OmniItem[], ctx: BarContext) => Record<string, number>;
 	/** Group order and caps. */
 	grouping?: GroupingOptions;
 	/** Upper bound handed to each source. */
@@ -381,11 +388,16 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// Only a fallback: a source that knows where it matched should say so.
 		this.matcher = parsed.text.length > 0 ? prepareFuzzySearch(parsed.text) : null;
 
+		const base = this.options.rankOptions?.() ?? {};
+		const boosts = this.options.contextBoostFor?.(
+			candidates.map((candidate) => candidate.item),
+			bar,
+		);
 		const ranked = rankCandidates(
 			candidates,
 			parsed.text,
 			bar,
-			this.options.rankOptions?.() ?? {},
+			boosts === undefined ? base : { ...base, contextBoost: boosts },
 		);
 		const items = ranked.map((entry) => entry.item);
 		const created = this.options.createItem?.(parsed) ?? null;
