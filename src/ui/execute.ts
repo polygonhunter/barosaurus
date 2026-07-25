@@ -1,8 +1,15 @@
-import { Notice, normalizePath, TFile, type App, type PaneType } from "obsidian";
+import { Notice, TFile, type App, type PaneType } from "obsidian";
 import type { OmniItem } from "../core/types";
+import { createNotePath } from "../sources/create";
+import { GOTO_LINE_PREFIX } from "../sources/line";
 import { SETTINGS_ACTION_PREFIX } from "../sources/settings-tabs";
 import { activeEditor } from "../services/context-service";
-import { executeCommandById, openSettingsTab, revealInFileExplorer } from "./unsafe";
+import {
+	executeCommandById,
+	openGlobalSearch,
+	openSettingsTab,
+	revealInFileExplorer,
+} from "./unsafe";
 
 /**
  * What actually happens when you pick a row or run an action.
@@ -40,6 +47,8 @@ export async function choose(
 			case "action": {
 				if (item.actionId.startsWith(SETTINGS_ACTION_PREFIX)) {
 					openSettingsTab(app, item.actionId.slice(SETTINGS_ACTION_PREFIX.length));
+				} else if (item.actionId.startsWith(GOTO_LINE_PREFIX)) {
+					gotoLine(app, Number(item.actionId.slice(GOTO_LINE_PREFIX.length)));
 				}
 				break;
 			}
@@ -51,23 +60,31 @@ export async function choose(
 				await openPath(app, item.path, paneType, item.line);
 				break;
 			case "bookmark":
-			case "tab":
 				if (item.path) await openPath(app, item.path, paneType);
+				break;
+			case "tab":
+				await activateTab(app, item.leafId, item.path, paneType);
 				break;
 			case "folder":
 				// A folder has nothing to open; reveal it where folders live.
 				revealInFileExplorer(app, item.path);
 				break;
 			case "tag":
-				// Hand the tag to the search pane rather than reimplementing it.
-				await app.workspace.openLinkText(`tag:${item.tag}`, "", paneType);
+				// NOT openLinkText: that resolves a wikilink, so an unresolved
+				// "tag:project" would create a note by that name in the user's
+				// vault. The search pane is the only correct target.
+				if (!openGlobalSearch(app, `tag:${item.tag}`)) {
+					new Notice("Barosaurus: the search pane is unavailable");
+					return;
+				}
 				break;
 			case "ghost":
-			case "create": {
-				const title = item.kind === "create" ? item.query : item.linktext;
-				await createNote(app, title, paneType);
+				await createNote(app, item.linktext, null, paneType);
 				break;
-			}
+			case "create":
+				// The row showed a path; create exactly that one.
+				await createNote(app, item.query, item.path, paneType);
+				break;
 		}
 		host.remember(item.id);
 	} catch (error) {
@@ -110,7 +127,7 @@ export async function runAction(
 				return;
 			default:
 				// Multi-step actions are not ours; say so rather than no-op.
-				new Notice("Barosaurus: that action needs a step that is not wired yet");
+				new Notice("Barosaurus: that action is not available yet");
 				return;
 		}
 	} catch (error) {
@@ -149,9 +166,58 @@ async function openPath(
 	await leaf.openFile(file, line === undefined ? undefined : { eState: { line } });
 }
 
-async function createNote(app: App, title: string, paneType: PaneType | boolean): Promise<void> {
-	const parent = app.fileManager.getNewFileParent(app.workspace.getActiveFile()?.path ?? "");
-	const path = normalizePath(`${parent.path}/${title}.md`.replace(/^\/+/, ""));
+/** `:42` — the editor counts lines from 0, the user counts from 1. */
+function gotoLine(app: App, line: number): void {
+	const editor = activeEditor(app);
+	if (!editor || !Number.isFinite(line)) return;
+	const target = Math.min(Math.max(line - 1, 0), editor.lastLine());
+	editor.setCursor({ line: target, ch: 0 });
+	editor.scrollIntoView({ from: { line: target, ch: 0 }, to: { line: target, ch: 0 } }, true);
+	editor.focus();
+}
+
+/**
+ * Activate the tab that already holds this thing, rather than opening its file
+ * again. Opening in the current leaf would replace whatever the user was
+ * looking at — the opposite of what "go to that tab" means.
+ */
+async function activateTab(
+	app: App,
+	leafId: string,
+	path: string | undefined,
+	paneType: PaneType | boolean,
+): Promise<void> {
+	// getLeafById is public since 1.5.1, comfortably under our 1.12.4 floor.
+	const leaf = leafId.length > 0 ? app.workspace.getLeafById(leafId) : null;
+	if (leaf) {
+		await app.workspace.revealLeaf(leaf);
+		return;
+	}
+	// The leaf is gone (closed since the list was built). Fall back to the file
+	// if there is one; a view without a file simply has nothing left to show.
+	if (path) {
+		await openPath(app, path, paneType);
+		return;
+	}
+	new Notice("Barosaurus: that tab is gone");
+}
+
+/**
+ * `explicitPath` is the path a Create row already showed the user — sanitised
+ * and folded into any `p:` prefix. Passing null means "work it out", which is
+ * what a ghost link needs.
+ */
+async function createNote(
+	app: App,
+	title: string,
+	explicitPath: string | null,
+	paneType: PaneType | boolean,
+): Promise<void> {
+	let path = explicitPath;
+	if (path === null) {
+		const parent = app.fileManager.getNewFileParent(app.workspace.getActiveFile()?.path ?? "");
+		path = createNotePath(title, parent.path);
+	}
 	const existing = app.vault.getFileByPath(path);
 	const file = existing ?? (await app.vault.create(path, ""));
 	await app.workspace.getLeaf(paneType).openFile(file);

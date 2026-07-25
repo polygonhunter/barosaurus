@@ -362,7 +362,15 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 					}),
 				);
 			} else {
-				candidates.push(...source.getCandidates(ctx));
+				// One throwing source must not take the whole query with it.
+				// getSuggestions is async, so an escaping throw becomes an
+				// unhandled rejection: the list silently stops updating with no
+				// notice and no degraded mode.
+				try {
+					candidates.push(...source.getCandidates(ctx));
+				} catch (error) {
+					console.error(`Barosaurus: source "${source.id}" failed`, error);
+				}
 			}
 		}
 

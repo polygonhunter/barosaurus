@@ -532,8 +532,10 @@ body.is-mobile .barosaurus-index {
 		display: none;
 	}
 
-	/* With the pill gone, selection must stay visible. */
-	.barosaurus-modal .suggestion-item.is-selected {
+	/* With the pill gone, selection must stay visible — but a group label is
+	   never a target, and the selection genuinely rests on one for a frame
+	   before the keyboard layer nudges past it. */
+	.barosaurus-modal .suggestion-item.is-selected:not(.barosaurus-group-row) {
 		background: var(--background-modifier-hover);
 	}
 }

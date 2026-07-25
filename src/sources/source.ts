@@ -51,15 +51,20 @@ export interface Source {
  */
 export interface StreamingSource {
 	id: string;
+	/**
+	 * Explicit marker rather than a guess. Sniffing `getCandidates.length >= 2`
+	 * looked clever and was wrong twice over: a default parameter or a rest
+	 * signature silently reports the wrong arity, and a misdetected source
+	 * gets spread as an array — `TypeError: … is not iterable`, swallowed into
+	 * an unhandled rejection because getSuggestions is async.
+	 */
+	readonly streaming: true;
 	appliesTo(ctx: SourceContext): boolean;
 	getCandidates(ctx: SourceContext, signal: AbortSignal): Promise<Candidate[]>;
 }
 
 export function isStreaming(source: Source | StreamingSource): source is StreamingSource {
-	return (
-		(source as StreamingSource).getCandidates.length >= 2 &&
-		!Array.isArray((source as Source).getCandidates)
-	);
+	return (source as StreamingSource).streaming === true;
 }
 
 /**

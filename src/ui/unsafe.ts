@@ -514,6 +514,22 @@ export function getLeafId(leaf: unknown): string | null {
 	return str(field(leaf, "id"));
 }
 
+// -------------------------------------------------------------- search pane
+
+/**
+ * Put a query into Obsidian's own search pane.
+ *
+ * There is no public way to run a vault search. The tempting shortcut —
+ * `workspace.openLinkText("tag:x", …)` — is actively harmful: openLinkText
+ * resolves a WIKILINK, so an unresolved one creates a note literally named
+ * `tag:x` in the user's vault. Reaching the core search plugin is the only
+ * correct route, and it degrades to `false` rather than writing anything.
+ */
+export function openGlobalSearch(app: unknown, query: string): boolean {
+	const instance = internalPluginInstance(app, "global-search");
+	return invoke(instance, "openGlobalSearch", [query], "global-search:open").ok;
+}
+
 // ----------------------------------------------------------- capabilities
 
 /**

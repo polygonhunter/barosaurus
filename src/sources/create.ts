@@ -65,6 +65,7 @@ export const createSource: Source = {
 			subtitle: path,
 			tile: { kind: "icon", icon: "file-plus" },
 			query: text,
+			path,
 		};
 		return candidatesFromOrdered([item]);
 	},

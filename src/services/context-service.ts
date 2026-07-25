@@ -18,7 +18,11 @@ export function readContext(app: App): BarContext {
 		// read from the editor rather than from the document selection.
 		selection: editor?.getSelection() ?? "",
 		hasEditor: editor !== null,
-		viewType: view?.getViewType() ?? app.workspace.getLeaf(false).getViewState().type ?? null,
+		// getMostRecentLeaf(), never getLeaf(false): getLeaf CREATES a leaf when
+		// there is none, and "there is none" is precisely the case this
+		// fallback exists for — a read on the keystroke path must not change
+		// the workspace.
+		viewType: view?.getViewType() ?? app.workspace.getMostRecentLeaf()?.getViewState().type ?? null,
 		now: Date.now(),
 	};
 }

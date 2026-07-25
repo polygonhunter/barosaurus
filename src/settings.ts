@@ -162,7 +162,7 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 			.setName("Hotkey")
 			.setDesc(
 				"Barosaurus ships without a shortcut, because a plugin should not take one from you. " +
-					"Assign one under Settings → Hotkeys, searching for “Open Barosaurus”. " +
+					"Assign one under Settings → Hotkeys, searching for “Barosaurus: Open”. " +
 					"Cmd+K is the natural home; note that Obsidian uses it for “Insert link”, so you " +
 					"would move that one to Cmd+Shift+K first.",
 			)

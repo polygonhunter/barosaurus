@@ -144,7 +144,17 @@ export type OmniItem =
 	| (OmniItemBase & { kind: "tag"; source: "tag"; tag: string; count: number })
 	| (OmniItemBase & { kind: "action"; source: "command"; actionId: string })
 	| (OmniItemBase & { kind: "ghost"; source: "ghost"; linktext: string })
-	| (OmniItemBase & { kind: "create"; source: "create"; query: string });
+	| (OmniItemBase & {
+			kind: "create";
+			source: "create";
+			query: string;
+			/**
+			 * The exact path the row promises, already sanitised and folded
+			 * into the `p:` folder. Carried on the item so the executor cannot
+			 * create something other than what the subtitle showed.
+			 */
+			path: string;
+	  });
 
 /**
  * A synthetic, unselectable row carrying a group label. Kept OUT of OmniItem
@@ -162,6 +172,20 @@ export type OmniRow = OmniItem | GroupHeader;
 
 export function isGroupHeader(row: OmniRow): row is GroupHeader {
 	return row.kind === "group-header";
+}
+
+/**
+ * The id a file item carries — and therefore the key its frecency and pins are
+ * stored under.
+ *
+ * It lives here rather than inline in the files source because two very
+ * distant places have to agree on it: the source that mints the item, and the
+ * plugin's `file-open` handler, which records usage for files opened anywhere
+ * in Obsidian, not just through the bar. When those two disagreed, frecency
+ * silently learned nothing while its dead entries evicted the live ones.
+ */
+export function fileItemId(path: string): string {
+	return `file:${path}`;
 }
 
 // ---------------------------------------------------------------- context

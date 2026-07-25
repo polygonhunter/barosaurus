@@ -9,7 +9,7 @@ import {
 import { kindForExtension } from "../core/index-types";
 import { fold } from "../core/normalize";
 import { containsPhrase, matchesTag, type ParsedQuery } from "../core/query";
-import type { Candidate, OmniItem, ResultKind, TileSpec } from "../core/types";
+import { fileItemId, type Candidate, type OmniItem, type ResultKind, type TileSpec } from "../core/types";
 import { candidatesFromOrdered, type Source, type SourceContext } from "./source";
 
 /**
@@ -167,7 +167,7 @@ export function fileItem(app: App, file: TFile): OmniItem {
 	const { aliases } = entryFor(app, file);
 	const subtitle = folderOf(file.path);
 	const item: OmniItem = {
-		id: `file:${file.path}`,
+		id: fileItemId(file.path),
 		kind: "file",
 		source: "file",
 		group: "files",

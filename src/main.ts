@@ -10,6 +10,7 @@ import {
 import { supportUrl } from "./core/catalog";
 import { contextBoosts } from "./core/context";
 import { DEFAULT_WEIGHTS } from "./core/index-types";
+import { fileItemId } from "./core/types";
 import type { RankOptions } from "./core/rank";
 import { Indexer } from "./index/indexer";
 import { OcrPipeline } from "./ocr/pipeline";
@@ -21,6 +22,7 @@ import { filesSource } from "./sources/files";
 import { foldersSource } from "./sources/folders";
 import { ghostSource } from "./sources/ghost";
 import { headingsSource } from "./sources/headings";
+import { lineSource } from "./sources/line";
 import { settingsTabsSource } from "./sources/settings-tabs";
 import type { Source, StreamingSource } from "./sources/source";
 import { tabsSource } from "./sources/tabs";
@@ -48,6 +50,7 @@ const DEFAULT_DATA: PersistentData = { frecency: {}, history: [] };
 
 /** Every source, in the order their groups appear when scores tie. */
 const ALL_SOURCES: readonly (Source | StreamingSource)[] = [
+	lineSource,
 	commandsSource,
 	tabsSource,
 	filesSource,
@@ -83,7 +86,9 @@ export default class BarosaurusPlugin extends Plugin {
 			getSettings: () => ({ excludedFolders: this.settings.excludedFolders }),
 		});
 
-		this.addCommand({ id: "open", name: "Open Barosaurus", callback: () => this.openBar() });
+		// Obsidian prefixes the plugin name itself, so this renders as
+		// "Barosaurus: Open". Naming it "Open Barosaurus" would stutter.
+		this.addCommand({ id: "open", name: "Open", callback: () => this.openBar() });
 
 		if (this.settings.showRibbonIcon) {
 			// Tappable entry point — on phones this lands in the side menu, so
@@ -95,22 +100,26 @@ export default class BarosaurusPlugin extends Plugin {
 
 		this.registerDoubleShift();
 
-		// Count every open so frecency has something to learn from; a rename
-		// keeps the file's history.
+		// Count every open so frecency has something to learn from — including
+		// opens that never went through the bar. The key MUST be the item id,
+		// not the bare path: the ranker looks up frecency[item.id], so a raw
+		// path here would be written, pruned and never read, while its dead
+		// entries evicted the live ones out of the 400-entry budget.
 		this.registerEvent(
 			this.app.workspace.on("file-open", (file) => {
 				if (!file) return;
 				const now = Date.now();
-				bumpFrecency(this.data.frecency, file.path, now);
+				bumpFrecency(this.data.frecency, fileItemId(file.path), now);
 				pruneFrecency(this.data.frecency, now);
 				this.saveDataSoon();
 			}),
 		);
 		this.registerEvent(
 			this.app.vault.on("rename", (file, oldPath) => {
-				renameFrecency(this.data.frecency, oldPath, file.path);
-				const pin = this.settings.pins.indexOf(oldPath);
-				if (pin >= 0) this.settings.pins[pin] = file.path;
+				// Same namespace on both sides, or a rename orphans the history.
+				renameFrecency(this.data.frecency, fileItemId(oldPath), fileItemId(file.path));
+				const pin = this.settings.pins.indexOf(fileItemId(oldPath));
+				if (pin >= 0) this.settings.pins[pin] = fileItemId(file.path);
 				this.saveDataSoon();
 			}),
 		);
@@ -175,7 +184,16 @@ export default class BarosaurusPlugin extends Plugin {
 			),
 			context: () => readContext(this.app),
 			rankOptions: () => this.rankOptions(),
-			sourceLimit: this.settings.resultLimit,
+			// resultLimit caps the RENDERED list, which is what the setting
+			// promises. Handing it to sources only would cap each of them
+			// separately — nine sources × 40 is 360 rows, not 40. Each source
+			// still gets a generous share so a single one cannot crowd out the
+			// rest before grouping trims.
+			sourceLimit: Math.max(10, Math.ceil(this.settings.resultLimit / 2)),
+			grouping: {
+				maxItems: this.settings.resultLimit,
+				perGroupLimit: Math.max(3, Math.ceil(this.settings.resultLimit / 4)),
+			},
 			// The core feature: with text selected, everything that acts on a
 			// selection rises. Off means the callback is simply absent.
 			contextBoostFor: this.settings.useContextRanking ? contextBoosts : undefined,
@@ -206,8 +224,12 @@ export default class BarosaurusPlugin extends Plugin {
 	 * shift that was part of a chord must never open anything.
 	 */
 	private registerDoubleShift(): void {
-		this.registerDomEvent(document, "keyup", (event: KeyboardEvent) => {
+		// activeWindow, not the global: a popout window has its own document,
+		// and the bare global would leave the trigger dead there.
+		this.registerDomEvent(activeWindow.document, "keyup", (event: KeyboardEvent) => {
 			if (this.settings.triggerStyle !== "double-shift") return;
+			// Never stack a second bar on top of the one already open.
+			if (activeDocument.querySelector(".barosaurus-modal") !== null) return;
 			if (event.key !== "Shift" || event.ctrlKey || event.altKey || event.metaKey) {
 				this.lastShiftAt = 0;
 				return;

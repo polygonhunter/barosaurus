@@ -24,7 +24,10 @@ export class SelectionPill {
 	/** Idempotent; call freely on every render pass. */
 	mount(listEl: HTMLElement): void {
 		// Touch has no hover, no arrow keys and no patience for a blur layer.
-		if (Platform.isMobile) return;
+		// isPhone, NOT isMobile: isMobile covers tablets too, and a tablet runs
+		// the full desktop layout. Skipping it there left the selection with no
+		// pill AND no theme highlight, so nothing showed which row was active.
+		if (Platform.isPhone) return;
 		if (this.pillEl !== null && this.pillEl.isConnected && this.listEl === listEl) return;
 		this.destroy();
 		this.listEl = listEl;

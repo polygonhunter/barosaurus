@@ -60,6 +60,7 @@ export function fixtureCreate(query: string): OmniItem {
 		source: "create",
 		group: "create",
 		id: `create:${query}`,
+		path: `${query}.md`,
 		title: query,
 		aliases: [],
 		query,
