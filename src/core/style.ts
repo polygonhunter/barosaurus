@@ -102,9 +102,16 @@ export const ALIGNMENT_LABELS: Record<Alignment, string> = {
 const OURS_FOREGROUND_RE =
 	/^<span style="color:\s*(?:var\(--color-[a-z]+\)|#[0-9a-fA-F]{3,8});?\s*">([\s\S]*)<\/span>$/;
 
-/** Our own background wrapper, either mode. */
+/**
+ * Our own background wrapper, either mode.
+ *
+ * The alternation is load-bearing, not decoration: theme mode emits
+ * `rgba(var(--color-red-rgb), 0.2)`, and a naive `[^)]*` stops at the closing
+ * paren of the INNER var(), so it never matches its own output. One nested
+ * parenthesis group is all the value can ever contain.
+ */
 const OURS_BACKGROUND_RE =
-	/^<mark style="background:\s*rgba\([^)]*\);?\s*">([\s\S]*)<\/mark>$/;
+	/^<mark style="background:\s*rgba\((?:[^()]|\([^()]*\))*\);?\s*">([\s\S]*)<\/mark>$/;
 
 /** Editing Toolbar's legacy markup — recognised so we can undo it cleanly. */
 const LEGACY_FONT_RE = /^<font\s+color=["']?[^"'>]+["']?>([\s\S]*)<\/font>$/;
