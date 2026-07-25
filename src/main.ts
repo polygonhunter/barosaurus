@@ -10,7 +10,7 @@ import {
 import { supportUrl } from "./core/catalog";
 import { contextBoosts } from "./core/context";
 import { DEFAULT_WEIGHTS } from "./core/index-types";
-import { fileItemId } from "./core/types";
+import { fileItemId, frecencyKeyFor } from "./core/types";
 import type { RankOptions } from "./core/rank";
 import { Indexer } from "./index/indexer";
 import { OcrPipeline } from "./ocr/pipeline";
@@ -23,6 +23,8 @@ import { foldersSource } from "./sources/folders";
 import { ghostSource } from "./sources/ghost";
 import { headingsSource } from "./sources/headings";
 import { lineSource } from "./sources/line";
+import { fullTextSource } from "./sources/fulltext";
+import { blocksSource } from "./sources/blocks";
 import { settingsTabsSource } from "./sources/settings-tabs";
 import type { Source, StreamingSource } from "./sources/source";
 import { tabsSource } from "./sources/tabs";
@@ -32,7 +34,8 @@ import {
 	DEFAULT_SETTINGS,
 	type BarosaurusSettings,
 } from "./settings";
-import { choose, runAction, type ExecuteHost } from "./ui/execute";
+import { createActionController } from "./ui/action-panel";
+import { choose, type ExecuteHost } from "./ui/execute";
 import { OmnibarModal } from "./ui/omnibar-modal";
 
 /** Shape of data.json: settings plus the small synced user state. */
@@ -52,12 +55,14 @@ const DEFAULT_DATA: PersistentData = { frecency: {}, history: [] };
 const ALL_SOURCES: readonly (Source | StreamingSource)[] = [
 	lineSource,
 	commandsSource,
+	blocksSource,
 	tabsSource,
 	filesSource,
 	headingsSource,
 	bookmarksSource,
 	foldersSource,
 	tagsSource,
+	fullTextSource,
 	settingsTabsSource,
 	ghostSource,
 	createSource,
@@ -172,10 +177,34 @@ export default class BarosaurusPlugin extends Plugin {
 			app: this.app,
 			remember: (id) => {
 				const now = Date.now();
-				bumpFrecency(this.data.frecency, id, now);
+				// A file found through its text and the same file found through
+				// its title must share one frecency key, or learning splits in
+				// two and neither half ever gets strong.
+				const key = frecencyKeyFor(id);
+				bumpFrecency(this.data.frecency, key, now);
 				pruneFrecency(this.data.frecency, now);
 				this.saveDataSoon();
 			},
+			pins: () => this.settings.pins,
+			setPins: (next) => {
+				this.settings.pins = next;
+				this.saveDataSoon();
+			},
+			hiddenCommands: () => this.settings.hiddenCommands,
+			setHiddenCommands: (next) => {
+				this.settings.hiddenCommands = next;
+				this.saveDataSoon();
+			},
+			history: () => this.data.history,
+			setHistory: (next) => {
+				this.data.history = next;
+				this.saveDataSoon();
+			},
+			editingSettings: () => ({
+				colorMode: this.settings.colorMode,
+				dateFormat: this.settings.dateFormat,
+				snippets: this.settings.snippets,
+			}),
 		};
 
 		return new OmnibarModal(this.app, {
@@ -197,9 +226,12 @@ export default class BarosaurusPlugin extends Plugin {
 			// The core feature: with text selected, everything that acts on a
 			// selection rises. Off means the callback is simply absent.
 			contextBoostFor: this.settings.useContextRanking ? contextBoosts : undefined,
+			showPreview: this.settings.showPreview,
+			index: () => this.indexer,
+			settings: () => this.settings,
+			actions: createActionController(host),
 			placeholder: "Search, jump, or do something…",
 			onChoose: (item, _evt, paneType) => void choose(host, item, paneType),
-			onAction: (actionId, item) => void runAction(host, actionId, item),
 		});
 	}
 

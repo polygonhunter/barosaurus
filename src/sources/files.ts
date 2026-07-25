@@ -8,9 +8,10 @@ import {
 } from "obsidian";
 import { kindForExtension } from "../core/index-types";
 import { fold } from "../core/normalize";
+import { folderOf } from "../core/paths";
 import { containsPhrase, matchesTag, type ParsedQuery } from "../core/query";
 import { fileItemId, type Candidate, type OmniItem, type ResultKind, type TileSpec } from "../core/types";
-import { candidatesFromOrdered, type Source, type SourceContext } from "./source";
+import { candidatesFromOrdered, excluderFor, type Source, type SourceContext } from "./source";
 
 /**
  * Notes and files, TITLE level: basename, frontmatter aliases and path. The
@@ -156,11 +157,14 @@ function tileFor(kind: ResultKind, path: string, extension: string): TileSpec {
 	return { kind: "icon", icon: "file" };
 }
 
-/** Folder of a path, or undefined at the vault root. */
-export function folderOf(path: string): string | undefined {
-	const cut = path.lastIndexOf("/");
-	return cut <= 0 ? undefined : path.slice(0, cut);
-}
+/**
+ * Folder of a path, or undefined at the vault root.
+ *
+ * The implementation moved to `core/paths.ts` — the full-text source needs it
+ * and may not import this file, which pulls obsidian in at runtime. Re-exported
+ * here because tabs, bookmarks and folders all import it from the matching kit.
+ */
+export { folderOf };
 
 export function fileItem(app: App, file: TFile): OmniItem {
 	const resultKind = kindForExtension(file.extension);
@@ -197,7 +201,17 @@ function fileTags(app: App, file: TFile): string[] {
 }
 
 /** Everything except the text match: kind, path, recency, tags, phrases, excludes. */
-function passesFilters(app: App, file: TFile, query: ParsedQuery, now: number): boolean {
+function passesFilters(
+	app: App,
+	file: TFile,
+	query: ParsedQuery,
+	now: number,
+	isExcluded: (path: string) => boolean,
+): boolean {
+	// "Everything inside is skipped" is what the setting promises, so it has to
+	// hold for the title list too — not only for the index, which was the one
+	// place that ever read it.
+	if (isExcluded(file.path)) return false;
 	if (!matchesKind(file, query.kind)) return false;
 
 	if (query.pathPrefix !== null) {
@@ -245,7 +259,10 @@ export const filesSource: Source = {
 		// query cannot mean anything but notes.
 		const corpus =
 			query.kind === "note" ? app.vault.getMarkdownFiles() : app.vault.getFiles();
-		const eligible = corpus.filter((file) => passesFilters(app, file, query, now));
+		// Built once for the whole corpus: with no excluded folders configured
+		// this is a constant `false` and the filter costs nothing.
+		const isExcluded = excluderFor(ctx);
+		const eligible = corpus.filter((file) => passesFilters(app, file, query, now, isExcluded));
 
 		const foldedQuery = fold(query.text);
 		if (foldedQuery.length === 0) {

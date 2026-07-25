@@ -3,7 +3,7 @@ import { fold } from "../core/normalize";
 import { containsPhrase } from "../core/query";
 import type { Candidate, OmniItem } from "../core/types";
 import { fuzzyFactory, orderByMatch, type Scorable } from "./files";
-import { candidatesFromOrdered, type Source, type SourceContext } from "./source";
+import { candidatesFromOrdered, excluderFor, type Source, type SourceContext } from "./source";
 
 /**
  * Headings and block ids — the "@" scope, and a contributor to the unscoped
@@ -102,12 +102,17 @@ function rowsFor(app: App, file: TFile): SymbolRow[] {
 function filesToScan(ctx: SourceContext): TFile[] {
 	const { app, query, bar } = ctx;
 	const active = bar.activeFile === null ? null : app.vault.getFileByPath(bar.activeFile);
+	// "@" is about the note you are IN. Refusing to show the outline of a note
+	// the user has open, because it happens to sit in an excluded folder, would
+	// be the setting overruling an explicit request.
 	if (query.scope === "symbol") return active === null ? [] : [active];
 
+	const isExcluded = excluderFor(ctx);
 	const out: TFile[] = [];
 	const seen = new Set<string>();
 	const take = (file: TFile | null): void => {
 		if (file === null || seen.has(file.path) || file.extension !== "md") return;
+		if (isExcluded(file.path)) return;
 		seen.add(file.path);
 		out.push(file);
 	};

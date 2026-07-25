@@ -188,6 +188,21 @@ export function fileItemId(path: string): string {
 	return `file:${path}`;
 }
 
+/**
+ * The key a chosen item is remembered under.
+ *
+ * A file found by its title and the SAME file found by its text arrive as two
+ * different items with two different ids — that separation is deliberate, it
+ * keeps the two groups from colliding in the rendered list. But frecency must
+ * not inherit it: splitting one note's history across two keys means neither
+ * half ever grows strong enough to matter. So the full-text namespace folds
+ * back into the file namespace here, at the one point where usage is recorded.
+ */
+export function frecencyKeyFor(itemId: string): string {
+	const FULLTEXT = "fulltext:";
+	return itemId.startsWith(FULLTEXT) ? fileItemId(itemId.slice(FULLTEXT.length)) : itemId;
+}
+
 // ---------------------------------------------------------------- context
 
 /** The editing situation, injected into ranking and action availability. */

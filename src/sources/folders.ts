@@ -3,7 +3,7 @@ import { fold } from "../core/normalize";
 import { containsPhrase } from "../core/query";
 import type { Candidate, OmniItem } from "../core/types";
 import { folderOf, fuzzyFactory, orderByMatch, type Scorable } from "./files";
-import { candidatesFromOrdered, type Source, type SourceContext } from "./source";
+import { candidatesFromOrdered, excluderFor, type Source, type SourceContext } from "./source";
 
 /**
  * Folders, so "go to my project folder" is one query rather than a sidebar
@@ -33,11 +33,15 @@ export const foldersSource: Source = {
 		const { app, query, limit } = ctx;
 		if (limit <= 0) return [];
 
+		const isExcluded = excluderFor(ctx);
 		const entries: Array<Scorable<OmniItem>> = [];
 		for (const entry of app.vault.getAllLoadedFiles()) {
 			if (!(entry instanceof TFolder)) continue;
 			// The vault root is every path's ancestor and never a useful result.
 			if (entry.path === "/" || entry.path.length === 0) continue;
+			// The excluded folder itself and everything under it — the check is
+			// boundary-aware, so "templates" leaves "templates-archive" alone.
+			if (isExcluded(entry.path)) continue;
 			if (query.pathPrefix !== null) {
 				if (!entry.path.toLowerCase().startsWith(query.pathPrefix.toLowerCase())) continue;
 			}

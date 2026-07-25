@@ -1,4 +1,4 @@
-import type { ActionDef, OmniItem } from "./types";
+import type { ActionDef, ArgumentPicker, OmniItem } from "./types";
 
 /**
  * The ⌘K panel.
@@ -283,3 +283,103 @@ export const ACTIONS: readonly ActionDef[] = [
 export const ACTIONS_BY_ID: ReadonlyMap<string, ActionDef> = new Map(
 	ACTIONS.map((action) => [action.id, action]),
 );
+
+// ---------------------------------------------------------------------- flow
+
+/**
+ * The multi-step machinery, kept pure so the whole flow is unit-testable
+ * without an App: which picker comes next, whether the bar closes afterwards,
+ * and what ⌘P / ↑ do to the stored lists.
+ */
+
+/**
+ * Actions that leave the bar open. Pinning and hiding are list-keeping, not
+ * navigation — you do several in a row and then carry on searching, so closing
+ * after each one would be the wrong shape. Everything else is a destination.
+ */
+const KEEP_OPEN: ReadonlySet<string> = new Set(["pin", "hide"]);
+
+export function closesBar(actionId: string): boolean {
+	return !KEEP_OPEN.has(actionId);
+}
+
+/**
+ * The picker for the next argument, or null when everything is collected and
+ * the action can run. `collected` is `collectedValues(state).length`, so the
+ * flow needs no counter of its own — the page stack already is one.
+ */
+export function nextArgument(action: ActionDef, collected: number): ArgumentPicker | null {
+	const args = action.arguments;
+	if (args === undefined || collected >= args.length) return null;
+	return args[collected] ?? null;
+}
+
+/** How many pages a flow will push in total. */
+export function argumentCount(action: ActionDef): number {
+	return action.arguments?.length ?? 0;
+}
+
+// ------------------------------------------------------------------- pins
+
+/**
+ * Toggle an id in the pin list.
+ *
+ * Keyed by `item.id`, never by a bare path: the ranker looks up
+ * `pinned.has(item.id)`, so a pin written under any other key would be stored,
+ * renamed along with the file, and never once read. `fileItemId()` is what
+ * mints that id for files, which is why the two must agree.
+ */
+export function togglePinned(pins: readonly string[], id: string): string[] {
+	return pins.includes(id) ? pins.filter((entry) => entry !== id) : [...pins, id];
+}
+
+export function isPinned(pins: readonly string[], id: string): boolean {
+	return pins.includes(id);
+}
+
+// ------------------------------------------------------------------ hiding
+
+/** Toggle a COMMAND id (not an item id) in the hidden list. */
+export function toggleHidden(hidden: readonly string[], commandId: string): string[] {
+	return hidden.includes(commandId)
+		? hidden.filter((entry) => entry !== commandId)
+		: [...hidden, commandId];
+}
+
+/**
+ * Is this row one the user hid from the bar? Only commands can be hidden, and
+ * the list stores the raw command id — the id Obsidian knows it by, so the
+ * setting survives Barosaurus changing how it namespaces its own item ids.
+ */
+export function isHiddenItem(item: OmniItem, hidden: ReadonlySet<string>): boolean {
+	return item.kind === "command" && hidden.has(item.commandId);
+}
+
+/** Drop hidden rows before ranking. Empty set → the very same array. */
+export function withoutHidden<T extends { item: OmniItem }>(
+	candidates: readonly T[],
+	hidden: ReadonlySet<string>,
+): readonly T[] {
+	if (hidden.size === 0) return candidates;
+	return candidates.filter((candidate) => !isHiddenItem(candidate.item, hidden));
+}
+
+// ----------------------------------------------------------------- history
+
+/**
+ * Where ↑ and ↓ land in the query history. `-1` means "not browsing" — the
+ * live input, not a recalled entry — so the walk always starts and ends there
+ * rather than at an off-by-one entry the user never typed.
+ */
+export function historyStep(length: number, index: number, direction: 1 | -1): number {
+	if (length <= 0) return -1;
+	const next = index + direction;
+	if (next < 0) return -1;
+	return Math.min(next, length - 1);
+}
+
+/** The text an index stands for; `-1` is the empty input the walk started from. */
+export function historyQuery(history: readonly string[], index: number): string {
+	if (index < 0) return "";
+	return history[index] ?? "";
+}

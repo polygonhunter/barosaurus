@@ -11,7 +11,12 @@ import {
 	listCommands,
 } from "../ui/unsafe";
 import { fuzzyFactory, orderByMatch, type Scorable } from "./files";
-import { candidatesFromOrdered, type Source, type SourceContext } from "./source";
+import {
+	candidatesFromOrdered,
+	sourceSettings,
+	type Source,
+	type SourceContext,
+} from "./source";
 
 /**
  * Every registered command, curated and gated — the heart of the bar.
@@ -54,9 +59,16 @@ interface Runnability {
  * a broken command — GUESS: we hide it, on the grounds that a row that throws
  * on sight will not run any better when clicked.
  */
+/**
+ * A command that takes an editor IS an editor command. Derived from the shape
+ * alone, so the context tag survives with the availability oracle switched off.
+ */
+export function isEditorCommand(command: Command): boolean {
+	return command.editorCheckCallback !== undefined || command.editorCallback !== undefined;
+}
+
 export function runnability(app: App, command: Command): Runnability {
-	const editorCommand =
-		command.editorCheckCallback !== undefined || command.editorCallback !== undefined;
+	const editorCommand = isEditorCommand(command);
 	const info = app.workspace.activeEditor;
 	const editor = info?.editor;
 
@@ -171,10 +183,27 @@ export function pluginCapabilities(app: App): PluginCapabilities {
 }
 
 /**
+ * The ids the user hid, as a set.
+ *
+ * Tolerant of both spellings on purpose: the setting documents itself as
+ * "command ids", while the action panel that fills it is holding an OmniItem
+ * whose id is `command:<id>`. Accepting either is one line here and removes a
+ * whole class of "the hide button does nothing" bug reports.
+ */
+function hiddenIds(ids: readonly string[]): ReadonlySet<string> {
+	const out = new Set<string>();
+	for (const raw of ids) {
+		if (raw.length === 0) continue;
+		out.add(raw.startsWith("command:") ? raw.slice("command:".length) : raw);
+	}
+	return out;
+}
+
+/**
  * Enumerated commands plus the gated family entries, pre-sorted into the order
  * the empty state wants: pinned, then curated, then everything else by name.
  */
-function corpus(app: App): CommandEntry[] {
+function corpus(app: App, hidden: ReadonlySet<string>): CommandEntry[] {
 	const registered = listCommands(app);
 	const byId = new Map(registered.map((command) => [command.id, command]));
 	const pinned = getPinnedCommandIds(app);
@@ -183,6 +212,9 @@ function corpus(app: App): CommandEntry[] {
 	const entries: CommandEntry[] = [];
 	for (const command of registered) {
 		if (FAMILY_IDS.has(command.id)) continue; // shown once, in the family group
+		// Hidden from THIS bar only — the command keeps working everywhere else,
+		// which is what the settings copy promises.
+		if (hidden.has(command.id)) continue;
 		if (command.mobileOnly === true && !Platform.isMobile) continue;
 		const curated = CURATED_BY_ID.get(command.id);
 		entries.push({
@@ -200,6 +232,7 @@ function corpus(app: App): CommandEntry[] {
 	for (const family of filterAvailable(FAMILY_COMMANDS, pluginCapabilities(app))) {
 		const command = byId.get(family.commandId);
 		if (command === undefined) continue;
+		if (hidden.has(command.id)) continue;
 		entries.push({
 			command,
 			curated: family,
@@ -246,8 +279,12 @@ export const commandsSource: Source = {
 	getCandidates(ctx: SourceContext): Candidate[] {
 		const { app, query, limit } = ctx;
 		if (limit <= 0) return [];
+		const settings = sourceSettings(ctx);
 
-		const entries: Array<Scorable<CommandEntry>> = corpus(app).map((entry) => ({
+		const entries: Array<Scorable<CommandEntry>> = corpus(
+			app,
+			hiddenIds(settings.hiddenCommands),
+		).map((entry) => ({
 			value: entry,
 			terms: entry.terms,
 		}));
@@ -263,7 +300,13 @@ export const commandsSource: Source = {
 		const lead: OmniItem[] = [];
 		const rest: OmniItem[] = [];
 		for (const entry of matched) {
-			const { runnable, editorCommand } = runnability(app, entry.command);
+			// With the setting off the oracle is not merely ignored, it is not
+			// consulted: a check callback is third-party code that runs on every
+			// keystroke, and "show me everything" is also a way of saying "stop
+			// asking plugins whether they feel available".
+			const { runnable, editorCommand } = settings.hideUnavailableCommands
+				? runnability(app, entry.command)
+				: { runnable: true, editorCommand: isEditorCommand(entry.command) };
 			if (!runnable) continue;
 			(entry.pinned ? lead : rest).push(itemFor(app, entry, editorCommand));
 			if (lead.length + rest.length >= limit * 2) break;

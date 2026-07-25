@@ -420,6 +420,132 @@
 	object-fit: cover;
 }
 
+/* ---- preview pane ---- */
+
+/* The modal wraps the result list and the preview in one flex row. Without
+   that wrapper — no preview mounted, which is every phone — the list is not a
+   flex item and every rule in this section is inert. */
+.barosaurus-body {
+	display: flex;
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+.barosaurus-body .prompt-results {
+	flex: 1 1 56%;
+	min-width: 0;
+}
+
+.barosaurus-preview {
+	flex: 1 1 44%;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	padding: var(--size-4-3) var(--size-4-4);
+	overflow-y: auto;
+	overflow-wrap: anywhere;
+	border-left: var(--border-width) solid
+		color-mix(in srgb, var(--background-modifier-border) 55%, transparent);
+}
+
+/* Nothing worth showing — a command, a tag, a note that does not exist yet.
+   The pane leaves entirely and the list takes the width back, rather than
+   sitting there as an empty column. */
+.barosaurus-preview.is-empty {
+	display: none;
+}
+
+.barosaurus-modal.is-preview-empty .prompt-results {
+	flex-basis: 100%;
+}
+
+/* A window this narrow is a phone-shaped window whatever the device says. */
+@media (max-width: 720px) {
+	.barosaurus-preview {
+		display: none;
+	}
+
+	.barosaurus-body .prompt-results {
+		flex-basis: 100%;
+	}
+}
+
+/* ---- preview content ---- */
+
+.barosaurus-preview-note {
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+}
+
+/* Note headings inside a 44%-wide column have to stop shouting. */
+.barosaurus-preview-note :is(h1, h2, h3, h4, h5, h6) {
+	font-size: 1.05em;
+	line-height: var(--line-height-tight);
+	margin: 0.7em 0 0.3em;
+}
+
+.barosaurus-preview-note :is(p, ul, ol, blockquote, pre) {
+	margin: 0 0 0.5em;
+}
+
+.barosaurus-preview-note img {
+	max-width: 100%;
+	height: auto;
+	border-radius: var(--radius-s);
+}
+
+.barosaurus-preview-image img {
+	max-width: 100%;
+	max-height: 42vh;
+	object-fit: contain;
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+}
+
+.barosaurus-preview-file {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--size-4-1);
+}
+
+.barosaurus-preview-icon {
+	color: var(--text-muted);
+	--icon-size: var(--icon-size-l);
+}
+
+.barosaurus-preview-name {
+	font-weight: var(--font-medium);
+	color: var(--text-normal);
+}
+
+.barosaurus-preview-meta,
+.barosaurus-preview-pages {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+
+/* The page count arrives after the rest; until then it must take no room. */
+.barosaurus-preview-pages:empty {
+	display: none;
+}
+
+/* The path is the one thing that is always true, so it anchors the bottom. */
+.barosaurus-preview-path {
+	margin-top: auto;
+	padding-top: var(--size-4-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+
+.barosaurus-mark {
+	background: var(--text-highlight-bg);
+	color: inherit;
+	border-radius: var(--radius-s);
+	padding: 0 1px;
+}
+
 /* ---- footer ---- */
 
 .barosaurus-modal .prompt-instructions {
@@ -484,6 +610,16 @@ body.is-phone .barosaurus-pill {
 	display: none;
 }
 
+/* No room for a side-by-side preview on a phone, even in landscape — which is
+   what the README promises. Tablets keep it. */
+body.is-phone .barosaurus-preview {
+	display: none;
+}
+
+body.is-phone .barosaurus-body .prompt-results {
+	flex-basis: 100%;
+}
+
 /* Safe-area clearance so the last row never hides behind the home indicator. */
 body.is-phone .barosaurus-modal .prompt-results {
 	padding: var(--size-4-1) var(--size-4-2)
@@ -516,6 +652,34 @@ body.is-mobile .barosaurus-row {
 body.is-mobile .barosaurus-modal .prompt-instructions,
 body.is-mobile .barosaurus-index {
 	display: none;
+}
+
+/* ---- action panel and flows ---- */
+
+/* The deepest crumb is where you are; the ones behind it are where you came
+   from. Same pill, less contrast, so the trail reads at a glance. */
+.barosaurus-crumb:not(:last-child) {
+	opacity: 0.6;
+}
+
+/* One level deep the list is a short, closed set of choices, so the rows sit
+   tighter than a vault-wide result list needs to. */
+.barosaurus-modal.is-nested .barosaurus-row {
+	padding-top: var(--size-2-2);
+	padding-bottom: var(--size-2-2);
+}
+
+/* Delete confirmation. Hand-built because ConfirmationModal is 1.13+ and the
+   floor is 1.12.4 — the buttons go right, destructive one last. */
+.barosaurus-confirm p {
+	margin: 0 0 var(--size-4-4);
+	color: var(--text-normal);
+}
+
+.barosaurus-confirm .setting-item {
+	border-top: none;
+	padding-bottom: 0;
+	justify-content: flex-end;
 }
 
 /* ---- restraint ---- */

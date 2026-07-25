@@ -1,3 +1,5 @@
+import type { BlockDef, UserSnippet } from "./blocks";
+import { fold } from "./normalize";
 import type { TileSpec } from "./types";
 
 /**
@@ -361,6 +363,240 @@ export const CURATED_COMMANDS: readonly CuratedCommand[] = [
 export const CURATED_BY_ID: ReadonlyMap<string, CuratedCommand> = new Map(
 	CURATED_COMMANDS.map((entry) => [entry.commandId, entry]),
 );
+
+// ============================================================ insert blocks
+
+/**
+ * Layer three: things the bar WRITES rather than runs.
+ *
+ * A curated command borrows a door that Obsidian already built. These entries
+ * have no door — there is no "insert a warning callout" command anywhere in
+ * Obsidian — so they carry their own template and the executor renders it
+ * through `core/insert.ts`. They are surfaced as `kind: "action"` rows whose
+ * `actionId` is `INSERT_ACTION_PREFIX + def.id`, the same shape the settings
+ * and go-to-line sources already use.
+ *
+ * Every template is a `BlockDef`, so the selection handling (`core/wrap.ts`)
+ * and the cursor arithmetic (`core/insert.ts`) are shared with everything else
+ * that writes into a note, and the whole set stays unit-testable.
+ */
+
+/** The executor switches on this prefix; the remainder is the BlockDef id. */
+export const INSERT_ACTION_PREFIX = "insert-block:";
+
+export function blockActionId(blockId: string): string {
+	return `${INSERT_ACTION_PREFIX}${blockId}`;
+}
+
+/** The BlockDef id inside an action id, or null when it is not one of ours. */
+export function blockIdFromActionId(actionId: string): string | null {
+	return actionId.startsWith(INSERT_ACTION_PREFIX)
+		? actionId.slice(INSERT_ACTION_PREFIX.length)
+		: null;
+}
+
+/**
+ * The 13 callout types Obsidian ships with, in the order its own documentation
+ * lists them. Aliases carry both Obsidian's official synonyms (`summary`,
+ * `tldr`, `caution`…) and the German words, because `fold()` folds both sides
+ * before comparing and a German user types "warnung", not "warning".
+ */
+export interface CalloutSpec {
+	type: string;
+	/** Sentence case, like every label in the bar. */
+	label: string;
+	aliases: readonly string[];
+}
+
+export const CALLOUT_TYPES: readonly CalloutSpec[] = [
+	{ type: "note", label: "Note callout", aliases: ["notiz", "hinweis", "merke"] },
+	{
+		type: "abstract",
+		label: "Abstract callout",
+		aliases: ["summary", "tldr", "zusammenfassung", "kurzfassung"],
+	},
+	{ type: "info", label: "Info callout", aliases: ["information", "infobox"] },
+	{ type: "todo", label: "Todo callout", aliases: ["aufgabe", "zu erledigen", "offen"] },
+	{ type: "tip", label: "Tip callout", aliases: ["hint", "important", "tipp", "wichtig"] },
+	{ type: "success", label: "Success callout", aliases: ["check", "done", "erfolg", "fertig"] },
+	{ type: "question", label: "Question callout", aliases: ["help", "faq", "frage", "hilfe"] },
+	{
+		type: "warning",
+		label: "Warning callout",
+		aliases: ["caution", "attention", "warnung", "achtung", "vorsicht"],
+	},
+	{
+		type: "failure",
+		label: "Failure callout",
+		aliases: ["fail", "missing", "fehlgeschlagen", "fehlschlag"],
+	},
+	{ type: "danger", label: "Danger callout", aliases: ["error", "gefahr", "fehler"] },
+	{ type: "bug", label: "Bug callout", aliases: ["defekt", "programmfehler"] },
+	{ type: "example", label: "Example callout", aliases: ["beispiel", "muster"] },
+	{ type: "quote", label: "Quote callout", aliases: ["cite", "zitat"] },
+];
+
+/** Fenced-code languages offered by the second stage of the code-block flow. */
+export const CODE_LANGUAGES: readonly string[] = [
+	"javascript",
+	"typescript",
+	"python",
+	"java",
+	"c",
+	"cpp",
+	"csharp",
+	"go",
+	"rust",
+	"swift",
+	"kotlin",
+	"ruby",
+	"php",
+	"bash",
+	"shell",
+	"powershell",
+	"sql",
+	"html",
+	"css",
+	"scss",
+	"json",
+	"yaml",
+	"toml",
+	"xml",
+	"markdown",
+	"latex",
+	"r",
+	"lua",
+	"perl",
+	"haskell",
+	"elixir",
+	"scala",
+	"dart",
+	"dockerfile",
+	"ini",
+	"diff",
+	"mermaid",
+	"plaintext",
+];
+
+/**
+ * All of these land in the "actions" group: they are things the bar does, not
+ * commands it forwards, and the group already leads GROUP_ORDER.
+ */
+function calloutBlock(spec: CalloutSpec): BlockDef {
+	return {
+		id: `callout-${spec.type}`,
+		name: spec.label,
+		aliases: ["callout", "hinweis", "box", spec.type, ...spec.aliases],
+		group: "actions",
+		// {fold} becomes "-" when the user asked for a folded callout.
+		template: `> [!${spec.type}]{fold}\n> {cursor}`,
+		wrap: "prefixLines",
+		linePrefix: "> ",
+		tile: { kind: "callout", calloutType: spec.type },
+		foldable: true,
+	};
+}
+
+/** The date entry. `{date}` is filled from the user's own format string. */
+const DATE_BLOCK: BlockDef = {
+	id: "date",
+	name: "Insert today's date",
+	aliases: ["datum", "heute", "date", "today", "now", "jetzt", "tagesdatum"],
+	group: "actions",
+	template: "{date}{cursor}",
+	wrap: "none",
+	tile: { kind: "icon", icon: "calendar" },
+	special: "date",
+};
+
+const CODEBLOCK: BlockDef = {
+	id: "codeblock",
+	name: "Code block",
+	aliases: ["codeblock", "code", "quelltext", "fence", "programmcode", "listing"],
+	group: "actions",
+	template: "```{lang}\n{cursor}\n```",
+	wrap: "fenced",
+	tile: { kind: "mono", sample: "{ }" },
+	special: "codeblock",
+};
+
+const FOOTNOTE: BlockDef = {
+	id: "footnote",
+	name: "Footnote",
+	aliases: ["fußnote", "fussnote", "footnote", "anmerkung", "reference", "quelle"],
+	group: "actions",
+	// Empty on purpose: a footnote is two edits (marker here, definition at the
+	// end of the document), so it is planned rather than templated.
+	template: "",
+	wrap: "none",
+	tile: { kind: "icon", icon: "superscript" },
+	special: "footnote",
+};
+
+const HORIZONTAL_RULE: BlockDef = {
+	id: "horizontal-rule",
+	name: "Horizontal rule",
+	aliases: ["trennlinie", "linie", "hr", "rule", "divider", "separator", "trenner"],
+	group: "actions",
+	template: "\n---\n{cursor}",
+	wrap: "none",
+	tile: { kind: "divider" },
+};
+
+/** Everything the bar can write without asking the user to configure it. */
+export const INSERT_BLOCKS: readonly BlockDef[] = [
+	DATE_BLOCK,
+	...CALLOUT_TYPES.map(calloutBlock),
+	CODEBLOCK,
+	FOOTNOTE,
+	HORIZONTAL_RULE,
+];
+
+/**
+ * The user's own snippets as catalog entries.
+ *
+ * The id is derived from the NAME rather than the array index, because the id
+ * is also the frecency key and the pin key: reordering the list in the
+ * settings tab must not hand one snippet another one's history. A name that
+ * folds to nothing (or collides) falls back to its position, which is stable
+ * enough for something that cannot be told apart in the list anyway.
+ */
+export function snippetBlocks(snippets: readonly UserSnippet[]): BlockDef[] {
+	const used = new Set<string>();
+	const blocks: BlockDef[] = [];
+	snippets.forEach((snippet, index) => {
+		const name = snippet.name.trim();
+		if (name.length === 0 || snippet.template.length === 0) return;
+		const folded = fold(name).replace(/\s+/g, "-");
+		const base = folded.length > 0 ? folded : String(index);
+		const id = used.has(`snippet:${base}`) ? `snippet:${base}-${index}` : `snippet:${base}`;
+		used.add(id);
+		blocks.push({
+			id,
+			name,
+			aliases: ["snippet", "baustein", "vorlage", "textbaustein"],
+			group: "actions",
+			// A template without {cursor} still works — the cursor lands at the end.
+			template: snippet.template,
+			wrap: "inline",
+			tile: { kind: "icon", icon: "scissors" },
+		});
+	});
+	return blocks;
+}
+
+/** Built-ins plus the user's snippets — what a source should enumerate. */
+export function insertBlocks(snippets: readonly UserSnippet[] = []): BlockDef[] {
+	return [...INSERT_BLOCKS, ...snippetBlocks(snippets)];
+}
+
+/** Resolve a BlockDef id back to its definition. Null when it is gone. */
+export function findInsertBlock(
+	blockId: string,
+	snippets: readonly UserSnippet[] = [],
+): BlockDef | null {
+	return insertBlocks(snippets).find((def) => def.id === blockId) ?? null;
+}
 
 /**
  * Help & feedback — the ONE outbound link in the whole plugin, and only ever

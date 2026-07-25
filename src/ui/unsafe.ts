@@ -514,6 +514,17 @@ export function getLeafId(leaf: unknown): string | null {
 	return str(field(leaf, "id"));
 }
 
+/**
+ * Reveal a vault file in the operating system's own file manager.
+ *
+ * `app.showInFolder` takes a vault-relative path and is undocumented. Desktop
+ * only by nature; on mobile it simply is not there, which the guard already
+ * handles — the action degrades to a notice instead of vanishing silently.
+ */
+export function showInSystemFolder(app: unknown, path: string): boolean {
+	return invoke(app, "showInFolder", [path], "showInFolder").ok;
+}
+
 // -------------------------------------------------------------- search pane
 
 /**

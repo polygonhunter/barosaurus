@@ -1,7 +1,7 @@
 import { fold } from "../core/normalize";
 import type { Candidate, OmniItem } from "../core/types";
 import { fuzzyFactory, orderByMatch, type Scorable } from "./files";
-import { candidatesFromOrdered, type Source, type SourceContext } from "./source";
+import { candidatesFromOrdered, excluderFor, type Source, type SourceContext } from "./source";
 
 /**
  * Ghost notes: wikilinks that point at notes which do not exist yet.
@@ -44,9 +44,14 @@ export const ghostSource: Source = {
 
 		// Aggregate first: the same missing note is usually linked from several
 		// places, and "linked from 4 notes" is the useful signal.
+		const isExcluded = excluderFor(ctx);
 		const counts = new Map<string, { linktext: string; sources: number }>();
-		for (const links of Object.values(app.metadataCache.unresolvedLinks)) {
+		// unresolvedLinks is keyed by the SOURCE note's path, so a link that
+		// only exists inside an excluded folder is skipped along with it — and
+		// its count stops inflating "linked from n notes".
+		for (const [notePath, links] of Object.entries(app.metadataCache.unresolvedLinks)) {
 			if (links === null || typeof links !== "object") continue;
+			if (isExcluded(notePath)) continue;
 			for (const linktext of Object.keys(links)) {
 				const folded = fold(linktext);
 				if (folded.length === 0) continue;

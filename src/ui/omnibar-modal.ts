@@ -8,18 +8,22 @@ import {
 	type SearchResult,
 	type SearchResultContainer,
 } from "obsidian";
+import { withoutHidden } from "../core/actions";
 import { groupRows, type GroupedRows, type GroupingOptions } from "../core/grouping";
 import {
 	breadcrumbs,
+	collectedValues,
 	createStack,
 	current,
+	isRoot,
 	pop,
 	push,
 	resolveBack,
 	setQuery as setPageQuery,
-	type Page,
+	setValue as setPageValue,
 	type PageStackState,
 } from "../core/pagestack";
+import { foldedWords } from "../core/normalize";
 import { isEmptyQuery, parseQuery, type ParsedQuery, type QueryScope } from "../core/query";
 import { rankCandidates, type RankOptions } from "../core/rank";
 import {
@@ -30,8 +34,19 @@ import {
 	type OmniItem,
 	type OmniRow,
 } from "../core/types";
-import { isStreaming, type Source, type SourceContext, type StreamingSource } from "../sources/source";
+import { dedupeFullText } from "../sources/fulltext";
+import {
+	isStreaming,
+	type FullTextIndex,
+	type Source,
+	type SourceContext,
+	type SourceSettings,
+	type StreamingSource,
+} from "../sources/source";
+import type { ActionController } from "./action-panel";
+import type { BarPage, BarSurface } from "./picker";
 import { SelectionPill } from "./pill";
+import { PreviewPane, shouldMountPreview } from "./preview";
 import { renderRow } from "./render";
 import { forceUpdateSuggestions } from "./unsafe";
 
@@ -51,9 +66,16 @@ const HEADER_NUDGE_BUDGET = 3;
 const DEFAULT_INSTRUCTIONS: Instruction[] = [
 	{ command: "↑↓", purpose: "Navigate" },
 	{ command: "↵", purpose: "Open" },
+	{ command: "⌘K", purpose: "Actions" },
 	{ command: "⌘↵", purpose: "New tab" },
-	{ command: "⇥", purpose: "Insert link" },
 	{ command: "⌘1–9", purpose: "Pick directly" },
+	{ command: "esc", purpose: "Back" },
+];
+
+/** While a page is on top, most of the root layer means nothing. */
+const PAGE_INSTRUCTIONS: Instruction[] = [
+	{ command: "↑↓", purpose: "Navigate" },
+	{ command: "↵", purpose: "Choose" },
 	{ command: "esc", purpose: "Back" },
 ];
 
@@ -87,6 +109,16 @@ export interface OmnibarOptions {
 	grouping?: GroupingOptions;
 	/** Upper bound handed to each source. */
 	sourceLimit?: number;
+	/** Render the highlighted result beside the list. Never on a phone. */
+	showPreview?: boolean;
+	/**
+	 * Read handle on the full-text index. A callback, like `context` and
+	 * `rankOptions`, so the index that exists on the next keystroke is the one
+	 * the sources see — the plugin builds it asynchronously after layout.
+	 */
+	index?: () => FullTextIndex | null;
+	/** The settings slice the sources read (exclusions, hidden commands). */
+	settings?: () => SourceSettings;
 	/** Synthetic "create from what you typed" row, folded in before grouping. */
 	createItem?: (parsed: ParsedQuery) => OmniItem | null;
 	/**
@@ -102,6 +134,12 @@ export interface OmnibarOptions {
 	) => void;
 	/** Named action on the highlighted item — Tab runs "insert-link". */
 	onAction?: (actionId: string, item: OmniItem, evt: KeyboardEvent) => void;
+	/**
+	 * The ⌘K panel, the multi-step flows, ⌘P and the ↑ history. Absent means
+	 * none of it exists: the bar stays a finder, and every key that would have
+	 * driven it does nothing instead of half-working.
+	 */
+	actions?: ActionController;
 	placeholder?: string;
 	instructions?: Instruction[];
 }
@@ -120,9 +158,19 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	private readonly pill: SelectionPill;
 	private readonly breadcrumbEl: HTMLElement;
 	private readonly statusEl: HTMLElement;
+	/** Null when the user switched the pane off, or on a phone. */
+	private readonly preview: PreviewPane | null;
 	private readonly selectionObserver: MutationObserver;
 
 	private stack: PageStackState = createStack();
+	/**
+	 * The behaviour of each pushed level, index-aligned with
+	 * `breadcrumbs(this.stack)`. The stack owns where you are; this owns what
+	 * that level shows and what choosing a row on it means.
+	 */
+	private pages: BarPage[] = [];
+	/** Where ↑ has walked to in the query history; -1 is the live input. */
+	private historyIndex = -1;
 	private rows: OmniRow[] = [];
 	private items: OmniItem[] = [];
 	/** item id → position among item rows; drives the ⌘1–9 chips. */
@@ -171,6 +219,19 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		this.statusEl = createDiv({ cls: "barosaurus-status" });
 		resultsParent.insertBefore(this.statusEl, this.resultContainerEl);
 
+		// The pane sits beside the list, so both move into a flex wrapper. Same
+		// rule as above: insert against the result container's real parent.
+		if (shouldMountPreview({ showPreview: options.showPreview ?? true })) {
+			const body = createDiv({ cls: "barosaurus-body" });
+			resultsParent.insertBefore(body, this.resultContainerEl);
+			body.appendChild(this.resultContainerEl);
+			this.preview = new PreviewPane(app, body.createDiv(), (empty) =>
+				this.modalEl.toggleClass("is-preview-empty", empty),
+			);
+		} else {
+			this.preview = null;
+		}
+
 		this.pill = new SelectionPill(this.modalEl);
 
 		// SuggestModal exposes no selection hook. The selected row is marked
@@ -210,6 +271,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		this.inputEl.removeEventListener("keydown", this.onArrowCapture, true);
 		this.selectionObserver.disconnect();
 		this.pill.destroy();
+		this.preview?.destroy();
 		this.inflight?.abort();
 		this.inflight = null;
 		super.onClose();
@@ -226,6 +288,22 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	// ----------------------------------------------------------------- keys
 
 	private registerKeys(): void {
+		// ⌘K — the action panel for the highlighted row, pushed as a level of
+		// this same bar. Registered FIRST so nothing else can claim the chord.
+		this.scope.register(["Mod"], "k", () => {
+			this.openActionPanel();
+			return false;
+		});
+
+		// ⌘P — pin or unpin. It has to come before the Emacs Ctrl+P below,
+		// because "Mod" IS Ctrl on Windows and Linux and the first matching
+		// handler wins: pinning is the documented binding, Emacs navigation is
+		// a nicety, so on those platforms Ctrl+P pins and ⌃N still steps down.
+		this.scope.register(["Mod"], "p", () => {
+			this.runOnActive("pin");
+			return false;
+		});
+
 		// Emacs-style navigation, the same path the arrows take.
 		this.scope.register(["Ctrl"], "n", () => {
 			this.navigate(1);
@@ -247,9 +325,13 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 			});
 		}
 
+		// Tab inserts a link at the cursor — but only when that action really
+		// applies to the highlighted row. On a command, a tag or a settings
+		// page it does nothing VISIBLE rather than half-acting: returning false
+		// still swallows the key, because the alternative is Tab moving focus
+		// out of the input, which is the one outcome nobody wants.
 		this.scope.register([], "Tab", (event) => {
-			const item = this.activeItem();
-			if (item !== null) this.options.onAction?.("insert-link", item, event);
+			this.runOnActive("insert-link", event);
 			return false;
 		});
 
@@ -289,12 +371,48 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	 */
 	private readonly onArrowCapture = (event: KeyboardEvent): void => {
 		if (this.synthetic) return; // our own re-dispatch, let it through
-		if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
 		if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+
+		if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+			// Editing the text ends a history walk: the moment you change what
+			// was recalled it is your query again, not an entry in a list.
+			if (event.key.length === 1 || event.key === "Backspace" || event.key === "Delete") {
+				this.historyIndex = -1;
+			}
+			return;
+		}
+
+		const direction = event.key === "ArrowDown" ? 1 : -1;
 		event.preventDefault();
 		event.stopPropagation();
-		this.navigate(event.key === "ArrowDown" ? 1 : -1);
+
+		// ↑ browses the history ONLY from an empty input — otherwise it is the
+		// selection key it has always been. Once a walk has started it
+		// continues in both directions, because the input is no longer empty
+		// but the user is still browsing.
+		if (this.browseHistory(direction)) return;
+		this.navigate(direction);
 	};
+
+	/**
+	 * One step through the query history. False means "this key was not for
+	 * me", which is what puts the selection back in charge.
+	 */
+	private browseHistory(direction: 1 | -1): boolean {
+		const actions = this.options.actions;
+		if (actions === undefined) return false;
+		if (!isRoot(this.stack)) return false;
+		const walking = this.historyIndex >= 0;
+		// ↑ from a typed query moves the selection; ↓ outside a walk likewise.
+		if (!walking && (direction === 1 || this.inputEl.value.length > 0)) return false;
+
+		// Up the list is BACK in time, so the arrow and the index run opposite.
+		const next = actions.historyStep(this.historyIndex, direction === -1 ? 1 : -1);
+		if (next === this.historyIndex) return true;
+		this.historyIndex = next;
+		this.setQuery(actions.historyQuery(next));
+		return true;
+	}
 
 	private navigate(direction: 1 | -1): void {
 		this.lastDirection = direction;
@@ -331,6 +449,12 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		const token = ++this.queryToken;
 		this.stack = setPageQuery(this.stack, query);
 
+		// A pushed level answers for itself: the sources have nothing to say
+		// about "which folder" or "which colour", and asking them anyway is how
+		// a picker ends up listing the vault.
+		const page = this.pages[this.pages.length - 1];
+		if (page !== undefined) return this.buildPage(page, query);
+
 		const parsed = parseQuery(query);
 		const bar = this.options.context?.() ?? EMPTY_CONTEXT;
 		this.modalEl.toggleClass("is-empty-query", isEmptyQuery(parsed));
@@ -342,6 +466,8 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 			bar,
 			query: parsed,
 			limit: this.options.sourceLimit ?? DEFAULT_SOURCE_LIMIT,
+			index: this.options.index?.() ?? null,
+			settings: this.options.settings?.(),
 		};
 
 		// A keystroke invalidates the request in flight: a late result
@@ -374,7 +500,12 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 			}
 		}
 
-		if (pending.length === 0) return this.finish(this.build(candidates, parsed, bar));
+		// Deduplicate BEFORE ranking and grouping: a "found in text" row for a
+		// file the title source already returned would otherwise spend a slot
+		// in its group's budget on a row that is then dropped.
+		if (pending.length === 0) {
+			return this.finish(this.build(dedupeFullText(candidates), parsed, bar));
+		}
 
 		this.setBusy(true);
 		const streamed = await Promise.all(pending);
@@ -383,7 +514,22 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// than repainting it with an answer to a question nobody asked.
 		if (token !== this.queryToken) return this.rows;
 		for (const batch of streamed) candidates.push(...batch);
-		return this.finish(this.build(candidates, parsed, bar));
+		return this.finish(this.build(dedupeFullText(candidates), parsed, bar));
+	}
+
+	/**
+	 * Rows for a pushed level. No sources, no ranking, no create row and no
+	 * group overlines — a picker is one flat list, and the page has already put
+	 * it in the order it wants.
+	 */
+	private buildPage(page: BarPage, query: string): OmniRow[] {
+		this.matches = new Map();
+		this.matcher = query.length > 0 ? prepareFuzzySearch(query) : null;
+		this.emptyStateText = page.emptyText;
+		this.modalEl.removeClass("is-empty-query");
+		this.scopeLabel = "";
+		this.setBusy(false);
+		return this.finish(groupRows(page.rows(query), { headers: false }));
 	}
 
 	/** Rank, fold in the create row, group, interleave the overlines. */
@@ -396,13 +542,18 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// Only a fallback: a source that knows where it matched should say so.
 		this.matcher = parsed.text.length > 0 ? prepareFuzzySearch(parsed.text) : null;
 
+		// "Hide from this bar" has to bite before ranking, or a hidden command
+		// still eats a slot in its group's cap and pushes a live row out.
+		const hidden = this.options.actions?.hidden() ?? new Set<string>();
+		const visible = withoutHidden(candidates, hidden);
+
 		const base = this.options.rankOptions?.() ?? {};
 		const boosts = this.options.contextBoostFor?.(
-			candidates.map((candidate) => candidate.item),
+			visible.map((candidate) => candidate.item),
 			bar,
 		);
 		const ranked = rankCandidates(
-			candidates,
+			visible,
 			parsed.text,
 			bar,
 			boosts === undefined ? base : { ...base, contextBoost: boosts },
@@ -427,7 +578,15 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 
 	/** Singular. `onNoSuggestions` would compile as a new property and never fire. */
 	onNoSuggestion(): void {
-		this.emptyStateText = this.scopeLabel.length > 0 ? "Nothing here." : "No matches.";
+		// A pushed level says what its own emptiness means — "Type a tag." is a
+		// prompt, "No matches." would be a shrug.
+		const page = this.pages[this.pages.length - 1];
+		this.emptyStateText =
+			page !== undefined
+				? page.emptyText
+				: this.scopeLabel.length > 0
+					? "Nothing here."
+					: "No matches.";
 		super.onNoSuggestion();
 	}
 
@@ -450,10 +609,59 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 
 	onChooseSuggestion(row: OmniRow, evt: MouseEvent | KeyboardEvent): void {
 		if (isGroupHeader(row)) return; // a label is not a target
+
+		// On a pushed level the choice belongs to that level: it commits a
+		// value and the flow decides what comes next. The root's onChoose must
+		// never see it, or picking a folder would try to open it.
+		const page = this.pages[this.pages.length - 1];
+		if (page !== undefined) {
+			page.choose(row, this.surface);
+			return;
+		}
+
+		// Only a query that led somewhere is worth recalling.
+		this.options.actions?.rememberQuery(this.inputEl.value);
+		this.historyIndex = -1;
 		// Straight through: isModEvent returns PaneType | boolean, and that is
 		// exactly what getLeaf()/openLinkText() accept. Narrowing it to "tab"
 		// is how ⌘⌥↵ quietly stops splitting.
 		this.options.onChoose?.(row, evt, Keymap.isModEvent(evt));
+	}
+
+	// ------------------------------------------------------------- actions
+
+	/** ⌘K. Does nothing on a group label, on an empty list, or inside a flow. */
+	private openActionPanel(): void {
+		const actions = this.options.actions;
+		if (actions === undefined || !isRoot(this.stack)) return;
+		const item = this.activeItem();
+		if (item === null) return;
+		this.options.actions?.rememberQuery(this.inputEl.value);
+		actions.openPanel(this.surface, item, this.options.context?.() ?? EMPTY_CONTEXT);
+	}
+
+	/**
+	 * Run one named action on the highlighted row — Tab and ⌘P.
+	 *
+	 * "Applies" is the registry's own answer, so Tab on a command row and ⌘P
+	 * on nothing both end here doing nothing at all. `onAction` stays the
+	 * escape hatch for a host that wired no controller.
+	 */
+	private runOnActive(actionId: string, evt?: KeyboardEvent): void {
+		if (!isRoot(this.stack)) return;
+		const item = this.activeItem();
+		if (item === null) return;
+		const actions = this.options.actions;
+		if (actions === undefined) {
+			if (evt !== undefined) this.options.onAction?.(actionId, item, evt);
+			return;
+		}
+		actions.runIfApplicable(
+			this.surface,
+			actionId,
+			item,
+			this.options.context?.() ?? EMPTY_CONTEXT,
+		);
 	}
 
 	// ------------------------------------------------------------ selection
@@ -476,6 +684,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 			return;
 		}
 		this.headerNudges = 0;
+		this.showPreviewFor();
 
 		// Keep the group's label on screen with its first row. Not
 		// scrollIntoViewIfNeeded — that is in neither the typings nor lib.dom.
@@ -483,6 +692,17 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		const target =
 			previous !== null && previous.classList.contains("barosaurus-group-row") ? previous : el;
 		target.scrollIntoView({ block: "nearest" });
+	}
+
+	/** Render the highlighted row in the pane, if there is one. */
+	private showPreviewFor(): void {
+		if (this.preview === null) return;
+		const item = this.activeItem();
+		if (item === null) {
+			this.preview.clear();
+			return;
+		}
+		void this.preview.show(item, foldedWords(this.inputEl.value));
 	}
 
 	private rowEls(): HTMLElement[] {
@@ -498,11 +718,31 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 
 	// ----------------------------------------------------------- page stack
 
+	/**
+	 * What a page may do to the bar. Handed to every page and to the flow, so
+	 * neither has to know this class exists.
+	 */
+	private readonly surface: BarSurface = {
+		pushPage: (page, initialQuery) => this.pushPage(page, initialQuery),
+		popPage: () => this.popPage(),
+		commit: (value) => {
+			this.stack = setPageValue(this.stack, value);
+			this.renderBreadcrumbs();
+		},
+		collected: () => collectedValues(this.stack),
+		refresh: () => this.refresh(),
+		close: () => this.close(),
+	};
+
 	/** Push a picker level: "Move to…" and friends collect one value each. */
-	pushPage(page: Omit<Page, "query">): void {
-		this.stack = push(this.stack, page);
-		this.renderBreadcrumbs();
-		this.setQuery("");
+	pushPage(page: BarPage, initialQuery = ""): void {
+		// Only the two state fields go into the stack — it is a record of where
+		// you are, not a place to park callbacks.
+		this.stack = push(this.stack, { kind: page.kind, label: page.label });
+		this.pages.push(page);
+		this.historyIndex = -1;
+		this.applyLevel();
+		this.setQuery(initialQuery);
 	}
 
 	/** Pop one level, restoring the query typed there. False at the root. */
@@ -510,9 +750,24 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		const next = pop(this.stack);
 		if (next === this.stack) return false;
 		this.stack = next;
-		this.renderBreadcrumbs();
+		this.pages.pop();
+		this.historyIndex = -1;
+		this.applyLevel();
 		this.setQuery(current(this.stack).query);
 		return true;
+	}
+
+	/** Placeholder, instructions and breadcrumbs for whatever level is on top. */
+	private applyLevel(): void {
+		const page = this.pages[this.pages.length - 1];
+		this.setPlaceholder(
+			page?.placeholder ?? this.options.placeholder ?? "Search, jump or do something…",
+		);
+		this.setInstructions(
+			page === undefined ? (this.options.instructions ?? DEFAULT_INSTRUCTIONS) : PAGE_INSTRUCTIONS,
+		);
+		this.modalEl.toggleClass("is-nested", page !== undefined);
+		this.renderBreadcrumbs();
 	}
 
 	/** Where the bar currently is. Read-only for the action layer. */
