@@ -105,7 +105,7 @@ const HEADINGS: CuratedCommand[] = ([1, 2, 3, 4, 5, 6] as const).map((level) => 
 	name: `Heading ${level}`,
 	aliases: [`h${level}`, `überschrift ${level}`, `titel ${level}`, `heading ${level}`],
 	icon: `heading-${level}`,
-	tile: { kind: "heading", level } as TileSpec,
+	tile: { kind: "heading", level },
 	contextTags: FORMAT,
 }));
 

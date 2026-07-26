@@ -26,6 +26,13 @@ const FORBIDDEN_SYMBOLS = [
 	"addDisplayValue",
 	"errorEl",
 	"ConfirmationModal",
+	// Both are what the community-plugin linter actively RECOMMENDS as the
+	// replacement for a deprecated call we make (`setWarning`,
+	// `setDynamicTooltip`). Taking that advice would satisfy one warning and
+	// fail the floor check outright, so they are named here to make the trap
+	// fail loudly instead of looking like a tidy-up.
+	"setDestructive",
+	"setDisplayFormat",
 ];
 
 /** Removed from the API in 1.7.2 — these do not exist in any current build. */

@@ -15,5 +15,8 @@ jobs:
           node-version: "20"
           cache: npm
       - run: npm ci
+      # The same linter the community-plugin review runs. Errors fail the build;
+      # the warnings left standing are deliberate and explained in CLAUDE.md.
+      - run: npm run lint
       - run: npm test
       - run: npm run build

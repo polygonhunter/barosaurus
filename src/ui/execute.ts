@@ -42,29 +42,38 @@ import {
  * that needs nothing from it. A missing member is a defined degraded state —
  * one notice naming what is not wired — never a throw.
  */
+/**
+ * Every member below is a *property holding a function*, not a method.
+ *
+ * That distinction is load-bearing rather than stylistic: these are injected
+ * callbacks, and callers pull them out of the host (`const write = host.setPins`)
+ * before deciding whether they exist. Method syntax would make each of those an
+ * unbound-method extraction — `this` silently lost — which is both a real class
+ * of bug and a hard error in the community-plugin lint.
+ */
 export interface ExecuteHost {
 	app: App;
 	/** Called after a successful pick so frecency can count it. */
-	remember(id: string): void;
+	remember: (id: string) => void;
 	/** Ids pinned to the top of the list, keyed by `item.id`. */
-	pins?(): readonly string[];
-	setPins?(next: string[]): void;
+	pins?: () => readonly string[];
+	setPins?: (next: string[]) => void;
 	/** Raw command ids the user hid from this bar. */
-	hiddenCommands?(): readonly string[];
-	setHiddenCommands?(next: string[]): void;
+	hiddenCommands?: () => readonly string[];
+	setHiddenCommands?: (next: string[]) => void;
 	/**
 	 * Recent queries, newest first. The bar reads and rewrites the whole list
 	 * (through `pushHistory`, which dedupes and bounds it) rather than asking
 	 * the plugin to append — same read/write pair as pins and hidden commands,
 	 * so `src/main.ts` stores and nothing more.
 	 */
-	history?(): readonly string[];
-	setHistory?(next: string[]): void;
+	history?: () => readonly string[];
+	setHistory?: (next: string[]) => void;
 	/**
 	 * Colour mode, date pattern and snippets — everything core/editing.ts
 	 * needs to plan a change to the note.
 	 */
-	editingSettings?(): EditingSettings;
+	editingSettings?: () => EditingSettings;
 }
 
 /**
@@ -473,13 +482,16 @@ function waitForActiveFile(app: App, before: TFile | null): Promise<TFile | null
 			if (done) return;
 			done = true;
 			app.workspace.offref(ref);
-			activeWindow.clearTimeout(timer);
+			window.clearTimeout(timer);
 			resolve(file);
 		};
 		const ref = app.workspace.on("file-open", (file) => finish(file));
-		// activeWindow, never the bare global: in a popout window the global
-		// belongs to the main window and the timer fires against the wrong one.
-		const timer = activeWindow.setTimeout(
+		// `window`, not `activeWindow`, and deliberately so: a timer has no DOM
+		// to belong to, and activeWindow can change between scheduling and
+		// clearing — then clearTimeout runs against a different window's queue
+		// and silently does nothing while the callback still fires. Only nodes
+		// need the popout-aware accessor.
+		const timer = window.setTimeout(
 			() => finish(app.workspace.getActiveFile()),
 			ACTIVE_FILE_TIMEOUT_MS,
 		);

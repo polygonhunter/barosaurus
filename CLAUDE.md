@@ -49,6 +49,42 @@ Also gone from the API entirely (removed in 1.7.2, not merely new):
 `prepareQuery`, `fuzzySearch`, `PreparedQuery`. Use `prepareFuzzySearch` /
 `prepareSimpleSearch`.
 
+## Community-plugin lint
+
+`npm run lint` runs `eslint-plugin-obsidianmd` — the same linter the store review
+runs. **It must report zero errors.** Warnings are a different matter: the ones
+left standing are deliberate, and each was checked before being left.
+
+Do not "fix" these; the fix is wrong:
+
+- **`display` deprecated · `prefer-setting-definitions`** — the replacement is the
+  declarative settings API, `@since 1.13.0`. Forbidden by the floor above.
+- **`setWarning` deprecated** — replacement `setDestructive()` is `@since 1.13.0`.
+- **`setDynamicTooltip` deprecated** — replacement `setDisplayFormat()` is
+  `@since 1.13.0`, and the note "the value is now always shown inline" carries no
+  version, so dropping the call may lose the value on our floor.
+- **`ui/sentence-case`** — every hit is an acronym, a proper noun or a format
+  token (`PDFs`, `German and English`, `Obsidian URI`, `YYYY-MM-DD`). Obeying it
+  would write `pdfs` and `yyyy-mm-dd`, which is not sentence case, it is wrong.
+- **`prefer-create-el`** — `createDiv`/`createEl` are declared on `Node` and
+  **append to it**. Both sites build a detached element and swap it in only if it
+  is still current; appending eagerly reintroduces the race the code exists to
+  avoid. The suggestion also does not typecheck (`Window` has no `createDiv`).
+- **`no-global-this` in `unsafe.ts`** — `navigator` is identical in every window,
+  so there is no popout concern, and `activeWindow` does not exist in the node
+  environment the accessors are unit-tested in.
+
+Two rules that ARE worth obeying, and why:
+
+- **`prefer-window-timers`** — use `window.setTimeout`, not `activeWindow`. A
+  timer has no DOM to belong to, and `activeWindow` can change between scheduling
+  and clearing, so `clearTimeout` silently misses. This is the one exception to
+  the `activeWindow` rule below: nodes yes, timers no.
+- **`unbound-method`** — injected callbacks on a host interface must be declared
+  as **properties holding functions** (`pins?: () => string[]`), never as methods
+  (`pins?(): string[]`). Callers pull them off the host before checking they
+  exist, and method syntax makes every such read an unbound extraction.
+
 ## Architecture rules
 
 - `src/core/**` never imports `obsidian`. That is what lets the whole test

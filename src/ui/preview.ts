@@ -178,6 +178,8 @@ export class PreviewPane {
 
 		// Built detached, swapped in only if still current. Created from THIS
 		// element's document so a popout window's preview belongs to the popout.
+		// Not createDiv(): that is declared on Node and APPENDS to it, which is
+		// exactly what must not happen here. The lint rule prefers it anyway.
 		const next = this.el.doc.createElement("div");
 		/** The owner of THIS render's rendered subtree, adopted only on swap-in. */
 		let owner: Component | null = null;
@@ -393,6 +395,7 @@ function markMatches(root: HTMLElement, queryWords: readonly string[]): void {
 			if (earliest === -1) break;
 			const matchNode = current.splitText(earliest);
 			const rest = matchNode.splitText(length);
+			// Detached on purpose — see the note on the preview root above.
 			const mark = root.doc.createElement("mark");
 			mark.addClass("barosaurus-mark");
 			matchNode.replaceWith(mark);

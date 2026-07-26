@@ -239,6 +239,10 @@ const KEY_SYMBOLS: Record<string, string> = {
  * stay unit-testable. Reading the user agent keeps the file import-free.
  */
 function isAppleKeyboard(): boolean {
+	// globalThis, and it stays: the no-global-this rule guards popout
+	// compatibility, but `navigator` is identical in every window so there is
+	// nothing to get wrong — and `activeWindow` does not exist in the node
+	// environment these accessors are unit-tested in.
 	const nav = dict((globalThis as { navigator?: unknown }).navigator);
 	const platform = str(nav?.["platform"]) ?? "";
 	const agent = str(nav?.["userAgent"]) ?? "";

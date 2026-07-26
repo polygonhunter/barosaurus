@@ -153,6 +153,21 @@ export interface OmnibarOptions {
  * cross-source comparison. SuggestModal also permits an async getSuggestions,
  * which is what lets a streaming source fold in behind the sync ones.
  */
+/**
+ * A window we can also construct events from.
+ *
+ * `Window` in lib.dom carries no constructor properties, so `win.Event` does
+ * not typecheck against it — the previous spelling reached for
+ * `typeof globalThis` to get them, which is the identifier the popout-safety
+ * lint rule bans. Naming the two constructors we actually use is narrower and
+ * says why they are here. They must come from THIS window: an event built with
+ * another window's constructor is not one a popout's document will accept.
+ */
+interface EventCapableWindow extends Window {
+	Event: typeof Event;
+	KeyboardEvent: typeof KeyboardEvent;
+}
+
 export class OmnibarModal extends SuggestModal<OmniRow> {
 	private readonly options: OmnibarOptions;
 	private readonly pill: SelectionPill;
@@ -253,7 +268,9 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	// ------------------------------------------------------------ lifecycle
 
 	onOpen(): void {
-		super.onOpen();
+		// Modal.onOpen is typed `Promise<void> | void`; `void` says we know and
+		// are deliberately not sequencing against it.
+		void super.onOpen();
 		// Stagger the very first paint only — never on keystrokes.
 		this.modalEl.addClass("is-entering");
 		this.win.setTimeout(() => this.modalEl.removeClass("is-entering"), ENTER_DURATION_MS);
@@ -281,8 +298,8 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	 * The input's own window. Never the bare global: in a popout window the
 	 * globals belong to the main window and every listener misses.
 	 */
-	private get win(): Window & typeof globalThis {
-		return this.inputEl.win as Window & typeof globalThis;
+	private get win(): EventCapableWindow {
+		return this.inputEl.win as EventCapableWindow;
 	}
 
 	// ----------------------------------------------------------------- keys

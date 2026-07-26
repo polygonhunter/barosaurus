@@ -1,12 +1,13 @@
 {
 	"name": "barosaurus",
-	"version": "0.9.1",
+	"version": "0.9.2",
 	"description": "One bar for everything — search, navigate and act from a single command bar.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"lint": "eslint \"src/**/*.ts\"",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"fetch-ocr-assets": "node scripts/fetch-ocr-assets.mjs",
@@ -27,8 +28,11 @@
 	"devDependencies": {
 		"@types/node": "^22",
 		"esbuild": "0.25.5",
+		"eslint": "^9.39.5",
+		"eslint-plugin-obsidianmd": "^0.4.1",
 		"obsidian": "latest",
 		"typescript": "^5.8.3",
+		"typescript-eslint": "^8.65.0",
 		"vitest": "^3.2.4"
 	}
 }

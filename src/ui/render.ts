@@ -1,5 +1,5 @@
 import { renderResults, setIcon, type SearchResult } from "obsidian";
-import { isGroupHeader, type GroupHeader, type OmniItem, type OmniRow, type TileSpec } from "../core/types";
+import { isGroupHeader, type GroupHeader, type OmniItem, type OmniRow } from "../core/types";
 import { calloutIcon, iconForGroup, iconForItem } from "./icons";
 
 /**
