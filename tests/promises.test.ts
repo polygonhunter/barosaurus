@@ -140,3 +140,46 @@ describe("the index is read, not only written", () => {
 		expect(readers, "nothing queries the index — indexing would be pure cost").not.toEqual([]);
 	});
 });
+
+const UNSAFE_FILE = join(SRC, "ui", "unsafe.ts");
+
+describe("the capability probe is surfaced, not only computed", () => {
+	// unsafe.ts probes the undocumented APIs so the plugin can degrade instead
+	// of crash. Degrading is its own failure mode though: the user just has one
+	// feature less and no way to find out why. docs/findings.md told the tester
+	// to read this probe while nothing outside unsafe.ts ever called it — the
+	// same missing-connection shape as every other case in this file.
+	for (const name of ["capabilities", "missingCapabilities"]) {
+		it(`something outside unsafe.ts calls ${name}()`, () => {
+			const readers = readersOf(`${name}(`, UNSAFE_FILE);
+			expect(
+				readers,
+				`${name}() is computed but never shown — a missing internal would stay invisible`,
+			).not.toEqual([]);
+		});
+	}
+});
+
+describe("internals stay inside the quarantine", () => {
+	// The architecture rule: every undocumented API lives behind a narrow
+	// accessor in src/ui/unsafe.ts, so there is exactly one file to audit when
+	// Obsidian changes. settings.ts once reached around it with its own cast to
+	// app.setting, which is how a rule with no test erodes.
+	const INTERNALS = [
+		"hotkeyManager",
+		"internalPlugins",
+		"enabledPlugins",
+		"updateSuggestions",
+		"chooser",
+	];
+
+	for (const name of INTERNALS) {
+		it(`only unsafe.ts touches ${name}`, () => {
+			const offenders = readersOf(name, UNSAFE_FILE);
+			expect(
+				offenders,
+				`${name} is an undocumented API — route it through src/ui/unsafe.ts`,
+			).toEqual([]);
+		});
+	}
+});

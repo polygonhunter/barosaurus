@@ -2,6 +2,7 @@ import { Platform, PluginSettingTab, Setting, type App, type Plugin } from "obsi
 import type { UserSnippet } from "./core/blocks";
 import type { ColorMode } from "./core/style";
 import type { OcrController } from "./ocr/pipeline";
+import { capabilities, missingCapabilities, openSettingsTab } from "./ui/unsafe";
 
 /**
  * Settings for Barosaurus.
@@ -589,6 +590,8 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 					"is the button below, which opens your browser only when you click it.",
 			);
 
+		new Setting(containerEl).setName("Internal APIs").setDesc(this.describeCapabilities());
+
 		new Setting(containerEl)
 			.setName("Help and feedback")
 			.setDesc(
@@ -600,17 +603,32 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 			);
 	}
 
+	/**
+	 * What the undocumented surface looks like in THIS build.
+	 *
+	 * Barosaurus degrades instead of crashing when an internal disappears, which
+	 * makes a missing one invisible — the bar quietly has one feature less and
+	 * nobody finds out why. This row is where it becomes visible, deliberately
+	 * placed right above the feedback button so a bug report can carry it.
+	 */
+	private describeCapabilities(): string {
+		const missing = missingCapabilities(capabilities(this.app));
+		if (missing.length === 0) {
+			return "Every undocumented API Barosaurus relies on is present in this Obsidian build.";
+		}
+		return (
+			"Unavailable in this Obsidian build: " +
+			missing.join(", ") +
+			". The entries that need them are hidden rather than shown broken."
+		);
+	}
+
 	/** Best effort: jump straight to the hotkey list, or explain the path. */
 	private openHotkeySettings(): void {
-		// app.setting is not in the public typings, so this goes through the
-		// same defensive route as every other internal — and simply does
-		// nothing visible if the shape ever changes.
-		const setting = (
-			this.app as unknown as {
-				setting?: { open?(): void; openTabById?(id: string): void };
-			}
-		).setting;
-		setting?.open?.();
-		setting?.openTabById?.("hotkeys");
+		// Through the quarantine, not around it: unsafe.ts owns every access to
+		// app.setting and returns false instead of throwing if the shape ever
+		// changes. Nothing to do on failure — the description next to this
+		// button already spells out the manual path.
+		openSettingsTab(this.app, "hotkeys");
 	}
 }

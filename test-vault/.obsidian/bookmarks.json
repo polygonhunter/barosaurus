@@ -1,0 +1,27 @@
+{
+	"items": [
+		{
+			"type": "file",
+			"ctime": 1785024000000,
+			"path": "Projects/Meeting notes.md"
+		},
+		{
+			"type": "group",
+			"ctime": 1785024000000,
+			"title": "Reference",
+			"items": [
+				{
+					"type": "file",
+					"ctime": 1785024000000,
+					"path": "Reference/Glossary.md"
+				}
+			]
+		},
+		{
+			"type": "search",
+			"ctime": 1785024000000,
+			"title": "Every meeting note",
+			"query": "tag:#meeting"
+		}
+	]
+}

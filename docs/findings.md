@@ -7,6 +7,11 @@ flips if the assumption fails.
 
 Status legend: ☐ unverified · ☑ verified (fill in date + Obsidian version).
 
+This file is the *reference* — one section per assumption, with the knob that flips if it
+fails. To actually run them, follow **[verification-checklist.md](verification-checklist.md)**,
+which orders the same eight gates into a single pass through one vault so the state carries
+from one to the next.
+
 ## 1. ☐ Markdown inside a coloured `<span>`
 
 **Assumption (load-bearing for the colour actions):** wrapping a selection in
@@ -59,9 +64,17 @@ changes without a keystroke.
 Neither appears anywhere in `obsidian.d.ts` — zero occurrences. Better Command Palette has
 depended on both since 2021, which is evidence they exist but not that they will remain.
 
-**Check:** open the bar, `console.log` the capability probe from `src/ui/unsafe.ts` once,
-and confirm both are reported present. Then verify Ctrl+N/Ctrl+P actually move the
-highlight.
+**Check:** `chooser` and `updateSuggestions` are **modal**-scoped, not app-scoped — they
+exist only while the bar is open, so no load-time probe can ever see them. `capabilities()`
+in `src/ui/unsafe.ts` therefore covers the six `app`-level internals only, and *Settings →
+About → Internal APIs* displays its verdict. The gate splits in two:
+
+1. *Settings → About → Internal APIs* must report everything present. That covers
+   commands, hotkey chips, community- and core-plugin detection, the vault tag list and
+   settings pages.
+2. `chooser` and `updateSuggestions` are checked **behaviourally**: `⌃N`/`⌃P` move the
+   highlight (that is `chooser`), and a mode change with no keystroke — pressing `⌘K` on a
+   result — refreshes the list (that is `updateSuggestions`).
 
 **If it fails:** the fallback is already the design — `unsafe.ts` returns `null`/`false`
 and the modal falls back to dispatching a synthetic `input` event for refresh, and to
