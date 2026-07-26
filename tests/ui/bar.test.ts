@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { App } from "obsidian";
 import { historyQuery, historyStep } from "../../src/core/actions";
+import { choose } from "../../src/ui/execute";
 import { OmnibarModal } from "../../src/ui/omnibar-modal";
 import type { Candidate, OmniItem } from "../../src/core/types";
 import type { Source, SourceContext } from "../../src/sources/source";
@@ -42,6 +43,20 @@ interface Harnessed {
 	chosen: ReturnType<typeof vi.fn>;
 }
 
+/**
+ * Every bar opened in a test, so it can be closed again.
+ *
+ * Leaving them open is not tidy-up pedantry: each modal keeps a live
+ * MutationObserver on its own result list, and several of them alive at once
+ * made the whole file hang while every test passed in isolation.
+ */
+const opened: OmnibarModal[] = [];
+
+afterEach(() => {
+	while (opened.length > 0) opened.pop()?.close();
+	document.body.empty();
+});
+
 function openBar(items: readonly OmniItem[], history: string[] = []): Harnessed {
 	const chosen = vi.fn();
 	const app = {
@@ -70,6 +85,7 @@ function openBar(items: readonly OmniItem[], history: string[] = []): Harnessed 
 		} as never,
 	});
 	modal.open();
+	opened.push(modal);
 	return { modal, chosen };
 }
 
@@ -90,10 +106,25 @@ function type(modal: OmnibarModal, text: string): void {
 	modal.inputEl.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+/** Every rendered row, group overlines included — the DOM the user scrolls. */
+function allRows(modal: OmnibarModal): HTMLElement[] {
+	return Array.from(modal.resultContainerEl.querySelectorAll<HTMLElement>(".suggestion-item"));
+}
+
+/**
+ * Only the rows that are results.
+ *
+ * groupRows interleaves an overline per group, so three commands render as FOUR
+ * rows. Counting all of them is how the first version of this file spent its
+ * whole timeout waiting for a condition that could never hold, then reported a
+ * product bug it had never actually reached.
+ */
+function itemRows(modal: OmnibarModal): HTMLElement[] {
+	return allRows(modal).filter((el) => !el.hasClass("barosaurus-group-row"));
+}
+
 function rowTitles(modal: OmnibarModal): string[] {
-	return Array.from(
-		modal.resultContainerEl.querySelectorAll<HTMLElement>(".suggestion-item"),
-	).map((el) => el.textContent ?? "");
+	return itemRows(modal).map((el) => el.textContent ?? "");
 }
 
 describe("the bar opens and lists results", () => {
@@ -175,5 +206,52 @@ describe("the arrow keys always lead back to the list", () => {
 		press(modal, "ArrowUp"); // nothing older left — must move the selection
 
 		expect(selectedIndex(modal), "the history walk kept the arrow key").not.toBe(inWalk);
+	});
+
+	// groupRows interleaves an overline per group, and the list wraps, so the
+	// selection lands on one sooner or later. activeItem() returns null while
+	// it sits there — and ⌘K, Tab and ⌘P all go through activeItem().
+	it("never rests the selection on a group overline", async () => {
+		const { modal } = openBar(three, []);
+		await vi.waitFor(() => expect(itemRows(modal).length).toBe(3));
+
+		const selectedEl = (): HTMLElement | undefined =>
+			allRows(modal).find((el) => el.hasClass("is-selected"));
+
+		expect(selectedEl()?.hasClass("barosaurus-group-row"), "first paint").toBe(false);
+		expect(modal.activeItem(), "first paint").not.toBeNull();
+
+		// Twice around, so the wrap past the overline is covered in both
+		// directions rather than assumed.
+		for (const key of ["ArrowDown", "ArrowUp"]) {
+			for (let step = 1; step <= 8; step++) {
+				press(modal, key);
+				expect(
+					selectedEl()?.hasClass("barosaurus-group-row"),
+					`${key} #${step} stopped on an overline`,
+				).toBe(false);
+				expect(modal.activeItem(), `${key} #${step}`).not.toBeNull();
+			}
+		}
+	});
+});
+
+describe("the executor reaches Obsidian", () => {
+	// "Not a single command works." The modal hands the item over correctly —
+	// that is asserted above — so the next link in the chain is this one.
+	it("runs a command through the command registry, by id", async () => {
+		const ran: string[] = [];
+		const app = {
+			commands: {
+				executeCommandById: (id: string) => {
+					ran.push(id);
+					return true;
+				},
+			},
+		} as unknown as Parameters<typeof choose>[0]["app"];
+
+		await choose({ app, remember: () => undefined }, commandItem("bold", "Bold"), false);
+
+		expect(ran, "the command never reached executeCommandById").toEqual(["test:bold"]);
 	});
 });

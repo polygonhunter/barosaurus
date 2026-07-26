@@ -1,6 +1,6 @@
 {
 	"name": "barosaurus",
-	"version": "0.9.4",
+	"version": "0.9.5",
 	"description": "One bar. Every action. Search, navigate and act on notes, commands and tabs from a single command bar.",
 	"main": "main.js",
 	"type": "module",

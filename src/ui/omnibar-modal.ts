@@ -694,6 +694,31 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	// ------------------------------------------------------------ selection
 
 	private syncSelection(): void {
+		// Stop watching while we write.
+		//
+		// This method mutates the very subtree the observer is subscribed to —
+		// it mounts the pill and re-dispatches keys that flip .is-selected — so
+		// every write queued another callback that wrote again. The loop runs
+		// across microtasks, which is why a plain re-entrancy flag does not
+		// catch it, and it froze the bar outright the moment the arrow keys
+		// started reaching this code. Disconnecting is the only guard that does
+		// not depend on guessing which write is the culprit.
+		//
+		// One nudge past an overline is enough on its own: a label is never
+		// adjacent to another label, so nothing is lost by not re-entering.
+		this.selectionObserver.disconnect();
+		try {
+			this.syncSelectionUnobserved();
+		} finally {
+			this.selectionObserver.observe(this.resultContainerEl, {
+				subtree: true,
+				childList: true,
+				attributeFilter: ["class"],
+			});
+		}
+	}
+
+	private syncSelectionUnobserved(): void {
 		const rows = this.rowEls();
 		const index = rows.findIndex((el) => el.hasClass("is-selected"));
 		if (index < 0) return;
