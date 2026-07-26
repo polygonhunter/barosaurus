@@ -431,7 +431,11 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 
 		// Up the list is BACK in time, so the arrow and the index run opposite.
 		const next = actions.historyStep(this.historyIndex, direction === -1 ? 1 : -1);
-		if (next === this.historyIndex) return true;
+		// The index did not move: there is nothing older (or newer) to recall.
+		// Hand the key BACK to the list rather than eat it — returning true here
+		// made ↑ a dead key on any vault with no history, which is every vault
+		// the first time it is opened, and pinned the walk at its oldest entry.
+		if (next === this.historyIndex) return false;
 		this.historyIndex = next;
 		this.setQuery(actions.historyQuery(next));
 		return true;
@@ -690,13 +694,27 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	// ------------------------------------------------------------ selection
 
 	private syncSelection(): void {
-		this.pill.mount(this.resultContainerEl);
 		const rows = this.rowEls();
 		const index = rows.findIndex((el) => el.hasClass("is-selected"));
 		if (index < 0) return;
-		this.selectedIndex = index;
 		const el = rows[index];
 		if (el === undefined) return;
+
+		// Bail out when the selection has not actually moved.
+		//
+		// The observer watches childList AND class changes across the whole
+		// result subtree, and the work below WRITES into that subtree (mounting
+		// the pill, toggling classes). Without this guard every write schedules
+		// another callback, which writes again — an endless loop across
+		// microtasks, so a synchronous re-entrancy flag would not catch it. The
+		// loop froze the whole bar the moment the arrow keys started reaching
+		// this code.
+		//
+		// A header still falls through: landing on one is exactly the case that
+		// must trigger another step.
+		if (index === this.selectedIndex && !isHeaderEl(el)) return;
+		this.selectedIndex = index;
+		this.pill.mount(this.resultContainerEl);
 
 		if (isHeaderEl(el)) {
 			// The default navigation landed on a label (it also does this for
