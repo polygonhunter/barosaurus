@@ -587,7 +587,7 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 			.setName("Privacy")
 			.setDesc(
 				"Barosaurus makes no network requests on its own and sends nothing anywhere. The one exception " +
-					"is the button below, which opens your browser only when you click it.",
+					"is the “Get in touch” button below, which opens your browser only when you click it.",
 			);
 
 		new Setting(containerEl).setName("Internal APIs").setDesc(this.describeCapabilities());
