@@ -183,3 +183,53 @@ describe("internals stay inside the quarantine", () => {
 		});
 	}
 });
+
+describe("no accessor shadows a member Obsidian owns", () => {
+	// The bar could not open at all, on the very first launch: Modal assigns a
+	// `win` field to the instance at runtime, that field is absent from the
+	// typings so neither tsc nor the store linter could see it, and our
+	// getter-only `get win()` on the prototype turned Modal's own assignment
+	// into "Cannot set property win of #<OmnibarModal> which has only a getter"
+	// — thrown inside the constructor, before anything rendered.
+	//
+	// A getter that merely READS is not the danger. Owning the NAME is.
+	const RESERVED = [
+		// Modal
+		"app",
+		"scope",
+		"containerEl",
+		"modalEl",
+		"titleEl",
+		"contentEl",
+		// SuggestModal
+		"limit",
+		"emptyStateText",
+		"inputEl",
+		"resultContainerEl",
+		// Assigned at runtime, documented nowhere — the ones that bite.
+		"win",
+		"doc",
+		"chooser",
+	];
+
+	const UI_DIR = join(SRC, "ui");
+	const ui = ALL_CODE.filter(({ file }) => file.startsWith(UI_DIR));
+
+	it("found the ui files to check", () => {
+		expect(ui.length).toBeGreaterThan(5);
+	});
+
+	for (const name of RESERVED) {
+		it(`nothing in src/ui declares "get ${name}()"`, () => {
+			const pattern = new RegExp(`\\bget\\s+${name}\\s*\\(`);
+			const offenders = ui
+				.filter(({ text }) => pattern.test(text))
+				.map(({ file }) => file.slice(ROOT.length + 1));
+
+			expect(
+				offenders,
+				`get ${name}() shadows a member Obsidian assigns to on its own instances — rename it`,
+			).toEqual([]);
+		});
+	}
+});

@@ -273,9 +273,9 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		void super.onOpen();
 		// Stagger the very first paint only — never on keystrokes.
 		this.modalEl.addClass("is-entering");
-		this.win.setTimeout(() => this.modalEl.removeClass("is-entering"), ENTER_DURATION_MS);
-		this.win.addEventListener("keydown", this.modHeld);
-		this.win.addEventListener("keyup", this.modHeld);
+		this.inputWin.setTimeout(() => this.modalEl.removeClass("is-entering"), ENTER_DURATION_MS);
+		this.inputWin.addEventListener("keydown", this.modHeld);
+		this.inputWin.addEventListener("keyup", this.modHeld);
 		this.renderBreadcrumbs();
 		this.pill.mount(this.resultContainerEl);
 		// Populate the empty state immediately rather than after the first key.
@@ -283,8 +283,8 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	}
 
 	onClose(): void {
-		this.win.removeEventListener("keydown", this.modHeld);
-		this.win.removeEventListener("keyup", this.modHeld);
+		this.inputWin.removeEventListener("keydown", this.modHeld);
+		this.inputWin.removeEventListener("keyup", this.modHeld);
 		this.inputEl.removeEventListener("keydown", this.onArrowCapture, true);
 		this.selectionObserver.disconnect();
 		this.pill.destroy();
@@ -297,8 +297,14 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	/**
 	 * The input's own window. Never the bare global: in a popout window the
 	 * globals belong to the main window and every listener misses.
+	 *
+	 * NOT named `win`. Modal assigns a `win` field on the instance at runtime —
+	 * it is absent from the typings, so nothing static can see it — and a
+	 * getter-only accessor of that name on our prototype turned that assignment
+	 * into "Cannot set property win of #<OmnibarModal> which has only a getter",
+	 * thrown inside the constructor. The bar could not open at all.
 	 */
-	private get win(): EventCapableWindow {
+	private get inputWin(): EventCapableWindow {
 		return this.inputEl.win as EventCapableWindow;
 	}
 
@@ -449,7 +455,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		this.synthetic = true;
 		for (let i = 0; i < times; i++) {
 			this.inputEl.dispatchEvent(
-				new this.win.KeyboardEvent("keydown", {
+				new this.inputWin.KeyboardEvent("keydown", {
 					key,
 					code: key,
 					bubbles: true,
@@ -834,7 +840,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	 */
 	refresh(): void {
 		if (forceUpdateSuggestions(this)) return;
-		this.inputEl.dispatchEvent(new this.win.Event("input"));
+		this.inputEl.dispatchEvent(new this.inputWin.Event("input"));
 	}
 }
 
