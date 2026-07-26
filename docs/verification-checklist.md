@@ -38,8 +38,8 @@ The takeover is deliberately **not built**; what ships is the explanation. This 
 one-look confirmation, not a real test.
 
 - **Do:** *Settings → Barosaurus → Opening the bar → Hotkey*.
-- **Expect:** a description of the two steps and a button that jumps to the hotkey
-  list. Click it — it must land on *Hotkeys*, not on a blank settings pane.
+- **Expect:** a description of the two steps and an **Open hotkey settings** button.
+  Click it — it must land on *Hotkeys*, not on a blank settings pane.
 - **If it differs:** the button routes through `openSettingsTab()` in
   `src/ui/unsafe.ts` and does nothing visible when the internal is gone. That is the
   designed degradation, so only a *crash* is a failure here.
