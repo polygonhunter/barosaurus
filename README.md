@@ -10,16 +10,16 @@ Obsidian has a command palette that finds commands, a quick switcher that finds 
 
 Barosaurus is one field for all of it. Notes, commands, open tabs, headings, bookmarks, folders and tags come back in a single grouped list — and every result has an action panel behind it. Select a sentence, type `b`, and **Bold** is the first row, ahead of every note in your vault that happens to start with b. That is the whole idea: the bar knows what you are doing, so the thing you meant is already at the top.
 
-I built Barosaurus because I kept using the command palette as a launcher and then hitting a wall. It would find "Move file to another folder" and then hand me back to a second dialog to pick the folder. It would find my note and then refuse to rename it. Everything in Obsidian is one keystroke away from being *found* and three windows away from being *done*. So Barosaurus treats finding as the first half of the sentence and acting as the second: one bar, one flow, and the folder picker opens inside it with a breadcrumb behind you.
+The gap was never discovery. It is follow-through. The command palette finds "Move file to another folder" and then hands you to a second dialog to pick the folder. The quick switcher finds a note and then refuses to rename it. Everything in Obsidian is one keystroke away from being *found* and three windows away from being *done*. Barosaurus treats finding as the first half of the sentence and acting as the second: one bar, one flow, and the folder picker opens inside it with a breadcrumb behind you.
 
-Barosaurus is the fifth plugin in the -osaurus family, next to [**Linkosaurus**](https://github.com/polygonhunter/linkosaurus), [**Scalosaurus**](https://github.com/polygonhunter/scalosaurus), [**Searchosaurus**](https://github.com/polygonhunter/searchosaurus), and [**Slashosaurus**](https://github.com/polygonhunter/slashosaurus). If something feels off or you have an idea, [open an issue on GitHub](https://github.com/polygonhunter/barosaurus/issues); I read everything.
+Barosaurus is the fifth plugin in the -osaurus family, next to [**Linkosaurus**](https://github.com/polygonhunter/linkosaurus), [**Scalosaurus**](https://github.com/polygonhunter/scalosaurus), [**Searchosaurus**](https://github.com/polygonhunter/searchosaurus), and [**Slashosaurus**](https://github.com/polygonhunter/slashosaurus). If something feels off or you have an idea, [open an issue on GitHub](https://github.com/polygonhunter/barosaurus/issues) — every one gets read.
 
 ## What it looks like
 
 | You type | Barosaurus shows first |
 |----------|------------------------|
 | `b` *(with text selected)* | **Bold** — ahead of every note starting with b |
-| `fett` | **Bold** again. Every entry answers in German and English |
+| `strong` | **Bold** again — entries answer to synonyms, not just their official name |
 | `h2` | **Heading 2** — initials count, so you never spell it out |
 | `>` | Every command in your vault, and nothing else |
 | `@intro` | The **Introduction** heading in the note you are in |
@@ -34,7 +34,7 @@ Barosaurus is the fifth plugin in the -osaurus family, next to [**Linkosaurus**]
 - **It ranks by what you are doing** — a text selection lifts everything that acts on a selection, an open editor lifts the editor commands, and closing the editor sinks them again. Not a filter, a nudge: the right thing rises, nothing useful disappears.
 - **Act, don't just find** — `⌘K` on any result opens its actions. Rename, move, open to the right, copy a link, bookmark it, append it to today's note, delete it. The first action is the primary one, so Enter usually does what you meant already.
 - **Multi-step flows** — Move to opens a folder picker, colour opens a swatch picker, all inside the bar with breadcrumb pills and a query that survives going back a level.
-- **Everything that is registered, plus a better name for it** — every command from every plugin is there automatically, and the ones you actually reach for get a proper name, an icon and German aliases on top. Obsidian calls it "Toggle bold"; you can just type `fett`.
+- **Everything that is registered, plus a better name for it** — every command from every plugin is there automatically, and the ones you actually reach for get a proper name, an icon and plain-English synonyms on top. Obsidian calls it "Toggle bold"; you can just type `b`.
 - **It remembers, even while you type** — what you use often and recently keeps its pull inside the ranking instead of only decorating the empty list. No other plugin does this.
 - **Radically clean** — one field and a list. Everything else lives on the keyboard, invisible until you use it.
 

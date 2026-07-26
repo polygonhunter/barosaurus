@@ -288,11 +288,11 @@ describe("wrap-callout", () => {
 		expect(text({ actionId: "wrap-callout", selection: "x" })).toBe("> [!note]\n> x");
 	});
 
-	it("maps a German type name onto the real callout type", () => {
-		expect(text({ actionId: "wrap-callout", selection: "x", argument: "Warnung" })).toBe(
+	it("maps a synonym onto the real callout type", () => {
+		expect(text({ actionId: "wrap-callout", selection: "x", argument: "Caution" })).toBe(
 			"> [!warning]\n> x",
 		);
-		expect(text({ actionId: "wrap-callout", selection: "x", argument: "zusammenfassung" })).toBe(
+		expect(text({ actionId: "wrap-callout", selection: "x", argument: "tldr" })).toBe(
 			"> [!abstract]\n> x",
 		);
 	});

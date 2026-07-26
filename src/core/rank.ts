@@ -52,8 +52,8 @@ const PIN_BOOST = 0.5;
  *
  * Ordering rationale: an exact title beats a prefix beats a contiguous
  * substring beats an acronym beats a scattered fuzzy hit. Aliases count fully
- * at every tier — "fett" must reach Bold exactly as well as "bold" does,
- * which is why every term goes through fold() (ß→ss, umlauts, punctuation).
+ * at every tier — "strong" must reach Bold exactly as well as "bold" does,
+ * which is why every term goes through fold() (case, accents, punctuation).
  */
 export function tierOf(item: OmniItem, foldedQuery: string, queryWords: readonly string[]): number {
 	if (foldedQuery.length === 0) return TIER_FUZZY;

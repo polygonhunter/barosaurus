@@ -61,7 +61,7 @@ export const createSource: Source = {
 			source: "create",
 			group: "create",
 			title: `Create note "${text}"`,
-			aliases: ["neue notiz", "new note", "create note", text],
+			aliases: ["new note", "create note", text],
 			subtitle: path,
 			tile: { kind: "icon", icon: "file-plus" },
 			query: text,

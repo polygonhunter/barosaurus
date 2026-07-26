@@ -1,9 +1,9 @@
 {
 	"id": "barosaurus",
 	"name": "Barosaurus",
-	"version": "0.9.2",
+	"version": "0.9.3",
 	"minAppVersion": "1.12.4",
-	"description": "One bar for everything — select text and type b for bold, jump to any note, move it to a folder, run any command. Notes, commands and open tabs in one list, ranked by what you are doing right now.",
+	"description": "One bar. Every action. Select text and type b for bold, jump to any note, move it to a folder, rename it, run any command — notes, commands, tabs and headings in one ranked list that knows what you are doing right now.",
 	"author": "polygonhunter",
 	"isDesktopOnly": false
 }

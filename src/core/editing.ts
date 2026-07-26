@@ -149,8 +149,8 @@ export function parseAlignment(value: string | null | undefined): Alignment | nu
 /**
  * Sanitise a callout type. Obsidian allows custom types, so an unrecognised
  * one is passed through rather than replaced — but only after anything that
- * would break the `> [!type]` syntax is stripped, and a German alias is mapped
- * onto the canonical type so "warnung" produces a real warning callout.
+ * would break the `> [!type]` syntax is stripped, and a known synonym is mapped
+ * onto the canonical type so "caution" produces a real warning callout.
  */
 export function normalizeCalloutType(value: string | null | undefined): string {
 	const raw = (value ?? "").trim().toLowerCase();

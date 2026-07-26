@@ -76,13 +76,15 @@ describe("tierOf — match quality ordering", () => {
 	});
 
 	it("counts aliases at EVERY tier, not just as a fallback", () => {
-		const bold = command({ id: "bold", title: "Toggle bold", aliases: ["Fett"] });
-		expect(tierFor(bold, "fett")).toBe(TIER_EXACT);
-		expect(tierFor(bold, "fet")).toBe(TIER_PREFIX);
-		expect(tierFor(bold, "ett")).toBe(TIER_CONTIGUOUS);
+		const bold = command({ id: "bold", title: "Toggle bold", aliases: ["Strong"] });
+		expect(tierFor(bold, "strong")).toBe(TIER_EXACT);
+		expect(tierFor(bold, "stro")).toBe(TIER_PREFIX);
+		expect(tierFor(bold, "tron")).toBe(TIER_CONTIGUOUS);
 
-		const heading = command({ id: "h", title: "Bold", aliases: ["Fett machen"] });
-		expect(tierFor(heading, "fm")).toBe(TIER_ACRONYM);
+		// "se" is not a prefix of "strong", so an acronym hit is the only way
+		// this can match — which is the point of the assertion.
+		const heading = command({ id: "h", title: "Bold", aliases: ["Strong emphasis"] });
+		expect(tierFor(heading, "se")).toBe(TIER_ACRONYM);
 	});
 
 	it("prefix-matches multi-word queries word by word, in order", () => {

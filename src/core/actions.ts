@@ -53,7 +53,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "create-note",
 		name: "Create note",
-		aliases: ["notiz erstellen", "neue notiz", "create", "new note"],
+		aliases: ["create", "new note", "create note"],
 		icon: "file-plus",
 		shortcut: "↵",
 		appliesTo: (item) => item.kind === "create" || item.kind === "ghost",
@@ -89,7 +89,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "insert-link",
 		name: "Insert link at cursor",
-		aliases: ["link einfügen", "insert link", "verlinken"],
+		aliases: ["insert link", "link"],
 		icon: "link",
 		shortcut: "⇥",
 		appliesTo: (item, ctx) => ctx.hasEditor && isFileLike(item),
@@ -130,7 +130,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "add-tag",
 		name: "Add tag…",
-		aliases: ["tag hinzufügen", "schlagwort", "add tag"],
+		aliases: ["add tag", "tag"],
 		icon: "hash",
 		arguments: [{ kind: "tag", prompt: "Tag" }],
 		appliesTo: (item) => item.kind === "file",
@@ -146,7 +146,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "append-daily",
 		name: "Append to daily note",
-		aliases: ["an tagesnotiz anhängen", "daily note", "journal"],
+		aliases: ["daily note", "journal", "append to daily note"],
 		icon: "calendar-plus",
 		requiresCorePlugin: "daily-notes",
 		appliesTo: (item) => isFileLike(item),
@@ -212,7 +212,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "extract-note",
 		name: "Extract to new note",
-		aliases: ["in neue notiz auslagern", "extract", "auslagern", "herauslösen"],
+		aliases: ["extract", "extract to new note", "split out"],
 		icon: "file-output",
 		arguments: [{ kind: "text", prompt: "Note title", placeholder: "Title" }],
 		appliesTo: (_item, ctx) => ctx.selection.length > 0 && ctx.hasEditor,
@@ -220,7 +220,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "wrap-callout",
 		name: "Wrap in callout…",
-		aliases: ["als callout", "in hinweis umwandeln", "callout", "box"],
+		aliases: ["callout", "box", "wrap in callout"],
 		icon: "quote",
 		arguments: [{ kind: "text", prompt: "Callout type", placeholder: "note, warning, tip…" }],
 		appliesTo: (_item, ctx) => ctx.selection.length > 0 && ctx.hasEditor,
@@ -228,7 +228,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "to-task",
 		name: "Turn into task list",
-		aliases: ["in aufgaben umwandeln", "todo", "aufgabenliste", "task list", "checkliste"],
+		aliases: ["todo", "task list", "checklist", "turn into tasks"],
 		icon: "list-checks",
 		appliesTo: (_item, ctx) => ctx.selection.length > 0 && ctx.hasEditor,
 	},
@@ -242,14 +242,14 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "to-quote",
 		name: "Turn into quote",
-		aliases: ["in zitat umwandeln", "zitat", "quote", "blockquote"],
+		aliases: ["quote", "blockquote", "turn into quote"],
 		icon: "text-quote",
 		appliesTo: (_item, ctx) => ctx.selection.length > 0 && ctx.hasEditor,
 	},
 	{
 		id: "link-from-selection",
 		name: "Create link from selection",
-		aliases: ["link aus auswahl", "verlinken", "create link", "zu notiz machen"],
+		aliases: ["create link", "link from selection", "make note"],
 		icon: "link-2",
 		appliesTo: (_item, ctx) => ctx.selection.length > 0 && ctx.hasEditor,
 	},
