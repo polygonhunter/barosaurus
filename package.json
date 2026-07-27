@@ -1,7 +1,7 @@
 {
 	"name": "barosaurus",
-	"version": "1.0.0",
-	"description": "One bar. Every action. Search, navigate and act on notes, commands and tabs from a single command bar.",
+	"version": "1.0.1",
+	"description": "A command bar for Obsidian — search, navigate and act on notes, commands, tabs and headings from a single field.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

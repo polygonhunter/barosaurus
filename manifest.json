@@ -1,9 +1,9 @@
 {
 	"id": "barosaurus",
 	"name": "Barosaurus",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"minAppVersion": "1.12.4",
-	"description": "One bar. Every action. Select text and type b for bold, jump to any note, move it to a folder, rename it, run any command — notes, commands, tabs and headings in one ranked list that knows what you are doing right now.",
+	"description": "A command bar for Obsidian — one field for notes, commands, tabs, headings, bookmarks and tags, and every result can be acted on: rename it, move it, bookmark it, format the selection. Ranked by what you are doing right now.",
 	"author": "polygonhunter",
 	"isDesktopOnly": false
 }
