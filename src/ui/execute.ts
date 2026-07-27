@@ -102,11 +102,24 @@ export async function choose(
 				break;
 			}
 			case "action": {
+				// The two prefix-encoded ids carry their argument in the id
+				// itself, so they never reach runAction's switch.
 				if (item.actionId.startsWith(SETTINGS_ACTION_PREFIX)) {
 					openSettingsTab(app, item.actionId.slice(SETTINGS_ACTION_PREFIX.length));
-				} else if (item.actionId.startsWith(GOTO_LINE_PREFIX)) {
-					gotoLine(app, Number(item.actionId.slice(GOTO_LINE_PREFIX.length)));
+					break;
 				}
+				if (item.actionId.startsWith(GOTO_LINE_PREFIX)) {
+					gotoLine(app, Number(item.actionId.slice(GOTO_LINE_PREFIX.length)));
+					break;
+				}
+				// Everything else goes through the one dispatcher. Without this
+				// the case handled exactly those two prefixes and fell out of
+				// the switch for every other verb, so an action row picked with
+				// Enter did nothing at all — colour, alignment, turn-into-task,
+				// callouts, dates, snippets, the lot. They worked only from the
+				// ⌘K panel, which is the only other caller of runAction, which
+				// is why commands looked fine while actions looked dead.
+				await runAction(host, item.actionId, item);
 				break;
 			}
 			case "file":

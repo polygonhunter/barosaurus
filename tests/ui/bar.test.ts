@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { App } from "obsidian";
+import { Notice, type App } from "obsidian";
 import { historyQuery, historyStep } from "../../src/core/actions";
 import { choose } from "../../src/ui/execute";
 import { OmnibarModal } from "../../src/ui/omnibar-modal";
@@ -253,5 +253,33 @@ describe("the executor reaches Obsidian", () => {
 		await choose({ app, remember: () => undefined }, commandItem("bold", "Bold"), false);
 
 		expect(ran, "the command never reached executeCommandById").toEqual(["test:bold"]);
+	});
+
+	// "Commands work, actions do not." choose() handled exactly two
+	// prefix-encoded action ids and fell out of the switch for every other
+	// verb, so an action picked with Enter did nothing and said nothing. The
+	// dispatcher was only ever reached from the ⌘K panel.
+	it("routes an action verb through the dispatcher", async () => {
+		// The harness records notices; the real typings know nothing of it, and
+		// tsc checks this file against those.
+		const shown = (Notice as unknown as { shown: string[] }).shown;
+		shown.length = 0;
+		const action = {
+			kind: "action",
+			source: "action",
+			group: "actions",
+			id: "wrap-callout",
+			title: "Wrap in callout",
+			aliases: [],
+			actionId: "wrap-callout",
+			tile: { kind: "icon", icon: "quote" },
+		} as unknown as OmniItem;
+
+		// No editor is open, so a verb that reached the dispatcher says so.
+		// Silence is the failure: that is what shipped.
+		const app = { workspace: { getActiveViewOfType: () => null } } as never;
+		await choose({ app, remember: () => undefined }, action, false);
+
+		expect(shown.join(" "), "the action verb was swallowed").toContain("no editor");
 	});
 });
