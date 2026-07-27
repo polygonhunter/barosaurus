@@ -56,12 +56,6 @@ const ENTER_DURATION_MS = 450;
 const DEFAULT_SOURCE_LIMIT = 60;
 /** Direct-pick shortcuts: ⌘1–9. */
 const DIRECT_PICK_COUNT = 9;
-/**
- * How often the selection may be nudged off a group overline before we give
- * up. One is always enough — a header is never the last row and never follows
- * another header — so this only exists to make a wrong assumption cheap.
- */
-const HEADER_NUDGE_BUDGET = 3;
 
 const DEFAULT_INSTRUCTIONS: Instruction[] = [
 	{ command: "↑↓", purpose: "Navigate" },
@@ -200,9 +194,13 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	private busy = false;
 	private scopeLabel = "";
 
-	private selectedIndex = 0;
-	private lastDirection: 1 | -1 = 1;
-	private headerNudges = 0;
+	/**
+	 * Which ROW is highlighted, or -1 when the list has just been rebuilt and
+	 * nothing has been highlighted on it yet. It is also the memory of where the
+	 * selection came FROM, which is what tells `syncSelection` which way a move
+	 * it did not make was travelling.
+	 */
+	private selectedIndex = -1;
 	/** True while re-dispatching our own navigation keys, so we let them pass. */
 	private synthetic = false;
 
@@ -441,16 +439,24 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		return true;
 	}
 
+	/**
+	 * One key press moves the selection by exactly one ITEM.
+	 *
+	 * The overlines are counted rather than assumed: the landing row is found
+	 * first, and the selection is then stepped by however many ROWS separate the
+	 * two. That is the only compensation in the bar — `syncSelection` uses the
+	 * same pair of helpers rather than nudging again on its own, because two
+	 * mechanisms guessing about the same overline is precisely how ↑ across a
+	 * group boundary became a dead key.
+	 */
 	private navigate(direction: 1 | -1): void {
-		this.lastDirection = direction;
-		this.headerNudges = 0;
 		const rows = this.rowEls();
 		if (rows.length === 0) return;
 		const from = rows.findIndex((el) => el.hasClass("is-selected"));
-		const next = wrapIndex(from + direction, rows.length);
-		const landing = rows[next];
-		// A label is never adjacent to another label, so two steps always clear it.
-		this.step(direction, landing !== undefined && isHeaderEl(landing) ? 2 : 1);
+		const to = nextItemRow(rows, from, direction);
+		// Nothing but overlines: there is nowhere to move to.
+		if (to < 0) return;
+		this.step(direction, rowDistance(from, to, direction, rows.length));
 	}
 
 	/** Move the selection by re-dispatching the key Obsidian already handles. */
@@ -596,7 +602,11 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		this.items = grouped.items;
 		this.ordinals.clear();
 		grouped.items.forEach((item, index) => this.ordinals.set(item.id, index));
-		this.headerNudges = 0;
+		// A new list: the old row index means nothing on it, and keeping it
+		// would tell syncSelection the selection had "travelled" from a row that
+		// no longer exists. -1 also makes activeItem() fall back to the first
+		// result, which is the row Obsidian is about to highlight anyway.
+		this.selectedIndex = -1;
 		// EVERY row occupies a slot — group labels, the create row, ghosts. Set
 		// the limit to the total or SuggestModal slices whole groups away.
 		this.limit = grouped.limit;
@@ -704,8 +714,9 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// started reaching this code. Disconnecting is the only guard that does
 		// not depend on guessing which write is the culprit.
 		//
-		// One nudge past an overline is enough on its own: a label is never
-		// adjacent to another label, so nothing is lost by not re-entering.
+		// Nothing is lost by not re-entering: the step below reads its own
+		// landing back out of the DOM, so this method never needs a second
+		// callback to learn where the selection ended up.
 		this.selectionObserver.disconnect();
 		try {
 			this.syncSelectionUnobserved();
@@ -720,10 +731,24 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 
 	private syncSelectionUnobserved(): void {
 		const rows = this.rowEls();
-		const index = rows.findIndex((el) => el.hasClass("is-selected"));
+		const landed = rows.findIndex((el) => el.hasClass("is-selected"));
+		if (landed < 0) return;
+		const landedEl = rows[landed];
+		if (landedEl === undefined) return;
+
+		// A selection the bar did not make, sitting on a label.
+		//
+		// Every repaint puts it there (Obsidian selects row 0, which is always
+		// an overline), and so does anything that moves the selection without
+		// coming through navigate() — a key pressed while focus is not in the
+		// input, the chooser's own select-on-hover. Carrying it off the label is
+		// this method's job; which WAY is not a guess and not a remembered key,
+		// it is the direction the selection was already travelling.
+		const index = isHeaderEl(landedEl) ? this.leaveOverline(rows, landed) : landed;
 		if (index < 0) return;
 		const el = rows[index];
-		if (el === undefined) return;
+		// Only overlines: leave the selection alone rather than spin on it.
+		if (el === undefined || isHeaderEl(el)) return;
 
 		// Bail out when the selection has not actually moved.
 		//
@@ -734,22 +759,9 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// microtasks, so a synchronous re-entrancy flag would not catch it. The
 		// loop froze the whole bar the moment the arrow keys started reaching
 		// this code.
-		//
-		// A header still falls through: landing on one is exactly the case that
-		// must trigger another step.
-		if (index === this.selectedIndex && !isHeaderEl(el)) return;
+		if (index === this.selectedIndex) return;
 		this.selectedIndex = index;
 		this.pill.mount(this.resultContainerEl);
-
-		if (isHeaderEl(el)) {
-			// The default navigation landed on a label (it also does this for
-			// the very first row of every result set). Step past it.
-			if (this.headerNudges >= HEADER_NUDGE_BUDGET) return;
-			this.headerNudges += 1;
-			this.step(this.lastDirection, 1);
-			return;
-		}
-		this.headerNudges = 0;
 		this.showPreviewFor();
 
 		// Keep the group's label on screen with its first row. Not
@@ -758,6 +770,28 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		const target =
 			previous !== null && previous.classList.contains("barosaurus-group-row") ? previous : el;
 		target.scrollIntoView({ block: "nearest" });
+	}
+
+	/**
+	 * Carry a selection that landed on a group label onto the nearest real
+	 * result, and report the row it ended on.
+	 *
+	 * The direction is derived from where the selection WAS, so the move that
+	 * put it on the label is continued rather than reversed. Reversing it is the
+	 * whole defect: with a remembered direction, an ↑ onto an overline was
+	 * pushed straight back down to the row it came from, and the key did nothing
+	 * however often it was pressed.
+	 *
+	 * The step happens with the observer disconnected, so its own class flip is
+	 * invisible to this class — the landing is read back out of the DOM here,
+	 * rather than left for a callback that will never come.
+	 */
+	private leaveOverline(rows: readonly HTMLElement[], at: number): number {
+		const direction = travelDirection(this.selectedIndex, at, rows.length);
+		const to = nextItemRow(rows, at, direction);
+		if (to < 0) return -1;
+		this.step(direction, rowDistance(at, to, direction, rows.length));
+		return this.rowEls().findIndex((el) => el.hasClass("is-selected"));
 	}
 
 	/** Render the highlighted row in the pane, if there is one. */
@@ -894,6 +928,47 @@ function isHeaderEl(el: HTMLElement): boolean {
 function wrapIndex(index: number, length: number): number {
 	if (length === 0) return 0;
 	return ((index % length) + length) % length;
+}
+
+/**
+ * The next row that is a real result, walking from `from` in `direction` and
+ * wrapping at the ends. -1 when the list holds no item rows at all.
+ *
+ * It counts the overlines instead of assuming there is exactly one. That
+ * assumption happens to hold for `groupRows` today — an empty group emits no
+ * label — but a navigation that breaks the moment two labels ever end up
+ * adjacent is not worth the two lines it saves, and this is also what makes one
+ * press mean one ITEM rather than one row.
+ */
+function nextItemRow(rows: readonly HTMLElement[], from: number, direction: 1 | -1): number {
+	const length = rows.length;
+	for (let stepped = 1; stepped <= length; stepped++) {
+		const at = wrapIndex(from + direction * stepped, length);
+		const el = rows[at];
+		if (el !== undefined && !isHeaderEl(el)) return at;
+	}
+	return -1;
+}
+
+/** How many single-row moves it takes to get from `from` to `to` going `direction`. */
+function rowDistance(from: number, to: number, direction: 1 | -1, length: number): number {
+	if (length === 0) return 0;
+	return wrapIndex(direction > 0 ? to - from : from - to, length);
+}
+
+/**
+ * Which way the selection was travelling to arrive at `to` from `from`.
+ *
+ * The shorter way round the list wins, which reads a single-row move correctly
+ * in both directions and at both wrap points. `from < 0` means the list was
+ * just rebuilt and there is no previous position — a repaint selects row 0, and
+ * forward from there is the top of the results, which is where a freshly typed
+ * query belongs.
+ */
+function travelDirection(from: number, to: number, length: number): 1 | -1 {
+	if (from < 0 || from === to || length === 0) return 1;
+	const forward = wrapIndex(to - from, length);
+	return forward <= length - forward ? 1 : -1;
 }
 
 /**

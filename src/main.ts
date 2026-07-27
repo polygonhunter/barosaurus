@@ -7,7 +7,7 @@ import {
 	renameFrecency,
 	type FrecencyEntry,
 } from "./core/frecency";
-import { supportUrl } from "./core/catalog";
+import { supportUrl, type SupportInfo } from "./core/catalog";
 import { contextBoosts } from "./core/context";
 import { DEFAULT_WEIGHTS } from "./core/index-types";
 import { fileItemId, frecencyKeyFor } from "./core/types";
@@ -22,6 +22,7 @@ import { filesSource } from "./sources/files";
 import { foldersSource } from "./sources/folders";
 import { ghostSource } from "./sources/ghost";
 import { headingsSource } from "./sources/headings";
+import { helpSource } from "./sources/help";
 import { lineSource } from "./sources/line";
 import { fullTextSource } from "./sources/fulltext";
 import { blocksSource } from "./sources/blocks";
@@ -51,11 +52,20 @@ interface PersistentData {
 
 const DEFAULT_DATA: PersistentData = { frecency: {}, history: [] };
 
-/** Every source, in the order their groups appear when scores tie. */
-const ALL_SOURCES: readonly (Source | StreamingSource)[] = [
+/**
+ * Every source, in the order their groups appear when scores tie.
+ *
+ * Exported so a test can drive the bar with the registry the plugin actually
+ * ships rather than a fixture list. That distinction is not academic here: a
+ * source can be written, unit-tested and merged while nothing ever adds it to
+ * this array, and the bar is then missing a whole category of results with
+ * every test still green — see tests/promises.test.ts for the pattern.
+ */
+export const ALL_SOURCES: readonly (Source | StreamingSource)[] = [
 	lineSource,
 	commandsSource,
 	blocksSource,
+	helpSource,
 	tabsSource,
 	filesSource,
 	headingsSource,
@@ -205,6 +215,11 @@ export default class BarosaurusPlugin extends Plugin {
 				dateFormat: this.settings.dateFormat,
 				snippets: this.settings.snippets,
 			}),
+			// The bar's two outbound entries, wired to the same window.open and
+			// the same facts the "Get in touch" button in the settings tab uses.
+			// Nothing here runs until a row is picked.
+			openExternal: (url) => this.openExternal(url),
+			supportInfo: () => this.supportInfo(),
 		};
 
 		return new OmnibarModal(this.app, {
@@ -286,23 +301,41 @@ export default class BarosaurusPlugin extends Plugin {
 		await this.indexer?.rebuild();
 	}
 
+	/** The "Get in touch" button in Settings → About. */
 	openSupport(): void {
-		// The only outbound link in the plugin, and only ever on a click.
-		window.open(
-			supportUrl({
-				pluginVersion: this.manifest.version,
-				obsidianVersion: apiVersion,
-				platform: Platform.isPhone
-					? "phone"
-					: Platform.isTablet
-						? "tablet"
-						: Platform.isMacOS
-							? "macos"
-							: Platform.isWin
-								? "windows"
-								: "linux",
-			}),
-		);
+		this.openExternal(supportUrl(this.supportInfo()));
+	}
+
+	/**
+	 * Open a URL outside Obsidian — the plugin's only outbound links, and only
+	 * ever on an explicit click or pick.
+	 *
+	 * `window`, not `activeWindow`: this hands a URL to the OS rather than
+	 * touching a node, so there is no popout document for it to belong to.
+	 */
+	private openExternal(url: string): void {
+		window.open(url);
+	}
+
+	/**
+	 * What a bug report should arrive carrying. Lives here because it is the
+	 * only place that has all three: `manifest` is the plugin's, `apiVersion`
+	 * and `Platform` come from obsidian, and `src/core` may not import it.
+	 */
+	private supportInfo(): SupportInfo {
+		return {
+			pluginVersion: this.manifest.version,
+			obsidianVersion: apiVersion,
+			platform: Platform.isPhone
+				? "phone"
+				: Platform.isTablet
+					? "tablet"
+					: Platform.isMacOS
+						? "macos"
+						: Platform.isWin
+							? "windows"
+							: "linux",
+		};
 	}
 
 	async loadSettings(): Promise<void> {

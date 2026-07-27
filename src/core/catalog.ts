@@ -603,8 +603,8 @@ export function findInsertBlock(
 }
 
 /**
- * Help & feedback — the ONE outbound link in the whole plugin, and only ever
- * on an explicit click. Nothing here runs in the background; see the privacy
+ * Help & feedback — the ONLY outbound links in the whole plugin, and only ever
+ * on an explicit pick. Nothing here runs in the background; see the privacy
  * section of the README.
  *
  * The parameters let a report arrive with the context that otherwise takes
@@ -613,11 +613,14 @@ export function findInsertBlock(
 const SUPPORT_BASE_URL = "https://polygonhunter.com/";
 const SUPPORT_ANCHOR = "#kontakt";
 
-export function supportUrl(info: {
+/** What a bug report should carry without the reporter having to look it up. */
+export interface SupportInfo {
 	pluginVersion: string;
 	obsidianVersion: string;
 	platform: string;
-}): string {
+}
+
+export function supportUrl(info: SupportInfo): string {
 	const params = new URLSearchParams({
 		plugin: "barosaurus",
 		version: info.pluginVersion,
@@ -626,3 +629,70 @@ export function supportUrl(info: {
 	});
 	return `${SUPPORT_BASE_URL}?${params.toString()}${SUPPORT_ANCHOR}`;
 }
+
+/** The issue tracker. Public, and the right place for anything reproducible. */
+export const ISSUES_URL = "https://github.com/polygonhunter/barosaurus/issues";
+
+/**
+ * The two action ids the dispatcher switches on.
+ *
+ * Named constants rather than inline strings because three files have to agree
+ * on them — the catalog that mints the entry, `runAction` that executes it, and
+ * the source that puts it in the list — and a typo in any one of them produces
+ * a row that looks perfectly fine and does nothing.
+ */
+export const SUPPORT_ACTION = "report-bug";
+export const ISSUES_ACTION = "open-issues";
+
+/** One row in the bar that leads out of the plugin. */
+export interface HelpEntry {
+	actionId: string;
+	/** Sentence case, like every other label. */
+	name: string;
+	/** Extra match terms, English only — see the note at the top of this file. */
+	aliases: string[];
+	icon: string;
+}
+
+/**
+ * Getting help, from the bar.
+ *
+ * Both destinations already existed — `supportUrl()` above and the issue
+ * tracker in the README — and neither was reachable from the one place a
+ * person actually looks when something is broken. The aliases are the words
+ * someone types while annoyed, not the words we would have chosen for a menu.
+ */
+export const HELP_ENTRIES: readonly HelpEntry[] = [
+	{
+		actionId: SUPPORT_ACTION,
+		name: "Report a bug or get in touch",
+		aliases: [
+			"bug",
+			"support",
+			"help",
+			"feedback",
+			"contact",
+			"problem",
+			"report",
+			"broken",
+			"not working",
+			"get in touch",
+		],
+		icon: "life-buoy",
+	},
+	{
+		actionId: ISSUES_ACTION,
+		name: "Open an issue on GitHub",
+		aliases: [
+			"issue",
+			"issues",
+			"github",
+			"bug",
+			"report",
+			"feature request",
+			"tracker",
+			"roadmap",
+		],
+		icon: "github",
+	},
+];

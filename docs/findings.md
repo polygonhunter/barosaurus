@@ -140,9 +140,19 @@ selection, so the bar can skip over a group label by dispatching twice.
 
 There is no public setter for the highlighted suggestion, and `src/ui/unsafe.ts` exposes
 `chooser.useSelectedItem` but no `setSelectedItem`. So `navigate()` swallows the real
-arrow key and re-dispatches one or two synthetic ones, with a MutationObserver as a safety
-net that nudges once more (budget 3) if the selection still sits on a label. The same net
-covers the first render, where Obsidian selects row 0 — which is always a header.
+arrow key, finds the next row that is a real result, and re-dispatches exactly as many
+synthetic ones as the gap between the two — one press, one item, however many labels are
+in between. A MutationObserver covers the selections the bar did not make: the first
+render and every repaint, where Obsidian selects row 0 and row 0 is always a label.
+
+That net used to be a second, independent skip that stepped once in `lastDirection` — the
+direction of the last key `navigate()` had handled. Reaching a label going *up* while that
+remembered direction was *down* pushed the selection straight back to the row it came
+from, so ↑ across a group boundary did nothing at all, however often it was pressed. The
+net now continues the move that actually happened (`travelDirection`), shares
+`navigate()`'s two helpers, and reads its own landing back out of the DOM — the step
+happens with the observer disconnected, so no callback is coming to tell it where it
+ended up. `tests/ui/bar-groups.test.ts` holds the boundary cases.
 
 **Check:** open the bar with results in at least three groups. Hold ↓ from the top to the
 bottom and back up. The highlight must never rest on a group label, must not skip a real

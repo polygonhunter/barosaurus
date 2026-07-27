@@ -71,7 +71,7 @@ Barosaurus works offline and sends nothing anywhere. There is no telemetry, no a
 
 There is exactly one outbound request, and only if you opt in: switching on OCR downloads the text-recognition models once, verified against a pinned checksum. After that, indexing, search and recognition all run locally.
 
-The only other thing that ever opens a connection is the **Help and feedback** entry, which opens your browser when you click it — and never otherwise.
+The only other things that ever open a connection are the help entries — **Report a bug or get in touch** and **Open an issue on GitHub**, in the bar and as the **Get in touch** button in the settings tab. They open your browser when you pick one, and never otherwise.
 
 ## Roadmap
 

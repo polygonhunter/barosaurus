@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Notice, type App } from "obsidian";
 import { historyQuery, historyStep } from "../../src/core/actions";
-import { choose } from "../../src/ui/execute";
+import { ALL_SOURCES } from "../../src/main";
+import { choose, runAction, type ExecuteHost } from "../../src/ui/execute";
 import { OmnibarModal } from "../../src/ui/omnibar-modal";
 import type { Candidate, OmniItem } from "../../src/core/types";
 import type { Source, SourceContext } from "../../src/sources/source";
@@ -126,6 +127,66 @@ function itemRows(modal: OmnibarModal): HTMLElement[] {
 function rowTitles(modal: OmnibarModal): string[] {
 	return itemRows(modal).map((el) => el.textContent ?? "");
 }
+
+/**
+ * Let the suggestion pipeline finish.
+ *
+ * A fixed number of turns rather than `vi.waitFor`: a waitFor that never comes
+ * true reports a timeout, and a timeout tells you nothing about what the bar
+ * actually showed. Three turns cover the async getSuggestions plus a streaming
+ * source folding in behind it.
+ */
+async function settle(): Promise<void> {
+	for (let turn = 0; turn < 3; turn += 1) {
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	}
+}
+
+/**
+ * The bar driven by ALL_SOURCES — the registry the plugin actually ships.
+ *
+ * Every other case in this file hands the modal a fixture source, which proves
+ * the modal works and proves nothing about whether a source is wired up. An
+ * entry that exists in a catalog, is unit-tested, and is in no registry is the
+ * exact failure this repo keeps hitting, so these cases go through the real
+ * list. Sources that need more App than the fake offers throw, the modal logs
+ * and carries on — which is the documented degraded behaviour, not a shortcut.
+ */
+function openRealBar(host: Partial<ExecuteHost> = {}): OmnibarModal {
+	const app = {
+		vault: {
+			getFileByPath: () => null,
+			getResourcePath: () => "",
+			getFiles: () => [],
+			getMarkdownFiles: () => [],
+			getAllLoadedFiles: () => [],
+		},
+		workspace: {
+			getActiveViewOfType: () => null,
+			getActiveFile: () => null,
+			getLastOpenFiles: () => [],
+			iterateAllLeaves: () => undefined,
+		},
+		metadataCache: { getTags: () => ({}), resolvedLinks: {}, unresolvedLinks: {} },
+	} as unknown as App;
+
+	const executeHost: ExecuteHost = { app, remember: () => undefined, ...host };
+	const modal = new OmnibarModal(app, {
+		sources: ALL_SOURCES,
+		showPreview: false,
+		onChoose: (item, _evt, paneType) => void choose(executeHost, item, paneType),
+	});
+	modal.open();
+	opened.push(modal);
+	return modal;
+}
+
+/** The versions and platform the support link is supposed to carry. */
+const TEST_SUPPORT_INFO = {
+	pluginVersion: "9.9.9",
+	obsidianVersion: "1.12.4",
+	platform: "linux",
+};
 
 describe("the bar opens and lists results", () => {
 	beforeEach(() => {
@@ -283,3 +344,196 @@ describe("the executor reaches Obsidian", () => {
 		expect(shown.join(" "), "the action verb was swallowed").toContain("no editor");
 	});
 });
+
+describe("bug reporting is discoverable from the bar", () => {
+	beforeEach(() => {
+		document.body.empty();
+	});
+
+	/**
+	 * The defect this covers: `supportUrl()` built a contact URL carrying the
+	 * plugin version, the Obsidian version and the platform, `openSupport()`
+	 * opened it — and the only caller in the whole plugin was a button in
+	 * Settings → About. A user in trouble types their problem into the bar, and
+	 * the bar answered every one of these words with nothing.
+	 */
+	const CONTACT_WORDS = ["bug", "support", "help", "feedback", "contact", "problem", "report"];
+	const GITHUB_WORDS = ["issue", "github", "feature request"];
+
+	for (const word of CONTACT_WORDS) {
+		it(`“${word}” surfaces the contact entry`, async () => {
+			const modal = openRealBar();
+			type(modal, word);
+			await settle();
+
+			expect(
+				rowTitles(modal).join(" | "),
+				`typing “${word}” offers no way to report a bug`,
+			).toContain("Report a bug or get in touch");
+		});
+	}
+
+	for (const word of GITHUB_WORDS) {
+		it(`“${word}” surfaces the GitHub entry`, async () => {
+			const modal = openRealBar();
+			type(modal, word);
+			await settle();
+
+			expect(
+				rowTitles(modal).join(" | "),
+				`typing “${word}” offers no route to the issue tracker`,
+			).toContain("Open an issue on GitHub");
+		});
+	}
+
+	/**
+	 * The other half of the bargain.
+	 *
+	 * `groupRows` orders groups strictly by GROUP_ORDER and Actions leads it, so
+	 * anything these entries match is pushed above every command and every note
+	 * — there is no score that can outrank a group. Recall is a subsequence
+	 * check, so a bare "b" reaches "bug" and a bare "h" reaches "help": the two
+	 * most ordinary first keystrokes there are would open with a support link
+	 * instead of Bold. Discoverable must not mean unavoidable.
+	 */
+	for (const stray of ["b", "h", "c", "r", "is"]) {
+		it(`stays out of the way of “${stray}”`, async () => {
+			const modal = openRealBar();
+			type(modal, stray);
+			await settle();
+
+			const titles = rowTitles(modal).join(" | ");
+			expect(titles, `typing “${stray}” put the contact entry at the top of the bar`).not.toContain(
+				"Report a bug or get in touch",
+			);
+			expect(titles, `typing “${stray}” put the GitHub entry at the top of the bar`).not.toContain(
+				"Open an issue on GitHub",
+			);
+		});
+	}
+
+	// The Actions group leads GROUP_ORDER, so this is also where a person who
+	// typed "help" will look first.
+	it("files both entries under Actions", async () => {
+		const modal = openRealBar();
+		type(modal, "bug");
+		await settle();
+
+		const groups = allRows(modal)
+			.filter((el) => el.hasClass("barosaurus-group-row"))
+			.map((el) => el.textContent ?? "");
+
+		expect(groups.join(" | "), "the help entries are not in the Actions group").toContain(
+			"Actions",
+		);
+	});
+});
+
+describe("choosing the help entry opens the link, and nothing else does", () => {
+	beforeEach(() => {
+		document.body.empty();
+	});
+
+	/**
+	 * Both halves of the README's privacy promise in one case: the browser
+	 * opens on an explicit pick and at no other moment. Merely LISTING the
+	 * entry must not fire, or "Barosaurus makes no network requests on its own"
+	 * stops being true the moment someone types "b".
+	 */
+	it("opens the contact URL on Enter and not before", async () => {
+		const opened: string[] = [];
+		const modal = openRealBar({
+			openExternal: (url: string) => opened.push(url),
+			supportInfo: () => TEST_SUPPORT_INFO,
+		});
+		type(modal, "report a bug");
+		await settle();
+
+		expect(rowTitles(modal)[0] ?? "", "the entry is not the top hit for its own name").toContain(
+			"Report a bug or get in touch",
+		);
+		expect(opened, "a link opened merely from listing the entry").toEqual([]);
+
+		press(modal, "Enter");
+		await settle();
+
+		expect(opened, "Enter on the entry never reached the URL opener").toHaveLength(1);
+		const url = opened[0] ?? "";
+		expect(url, "the contact URL is not the one supportUrl() builds").toContain(
+			"polygonhunter.com",
+		);
+		expect(url, "the report would arrive without the plugin version").toContain("9.9.9");
+		expect(url, "the report would arrive without the platform").toContain("linux");
+	});
+
+	// Straight at the dispatcher: the ⌘K panel calls runAction directly, so a
+	// verb that only works through choose() is half-wired.
+	it("routes the support verb through runAction", async () => {
+		const opened: string[] = [];
+		await runAction(
+			{
+				app: {} as never,
+				remember: () => undefined,
+				openExternal: (url: string) => opened.push(url),
+				supportInfo: () => TEST_SUPPORT_INFO,
+			},
+			"report-bug",
+			helpItem("report-bug"),
+		);
+
+		expect(opened, "the support verb never reached the URL opener").toHaveLength(1);
+		expect(opened[0] ?? "").toContain("version=9.9.9");
+		expect(opened[0] ?? "").toContain("platform=linux");
+	});
+
+	it("routes the GitHub verb through runAction", async () => {
+		const opened: string[] = [];
+		await runAction(
+			{
+				app: {} as never,
+				remember: () => undefined,
+				openExternal: (url: string) => opened.push(url),
+				supportInfo: () => TEST_SUPPORT_INFO,
+			},
+			"open-issues",
+			helpItem("open-issues"),
+		);
+
+		expect(opened, "the GitHub verb never reached the URL opener").toEqual([
+			"https://github.com/polygonhunter/barosaurus/issues",
+		]);
+	});
+
+	// A host with no opener wired must say so rather than throw — the same
+	// degraded contract every other optional member of ExecuteHost has.
+	it("says so when the host has no way to open a link", async () => {
+		const shown = (Notice as unknown as { shown: string[] }).shown;
+		shown.length = 0;
+
+		await runAction(
+			{ app: {} as never, remember: () => undefined },
+			"report-bug",
+			helpItem("report-bug"),
+		);
+
+		// Naming the link is the point: "that action is not available yet" is
+		// what an unrouted verb already says, so asserting anything vaguer than
+		// this would pass against the defect.
+		expect(shown.join(" "), "a host without an opener said nothing about links").toContain(
+			"link",
+		);
+	});
+});
+
+function helpItem(actionId: string): OmniItem {
+	return {
+		kind: "action",
+		source: "command",
+		group: "actions",
+		id: `help:${actionId}`,
+		title: "Report a bug or get in touch",
+		aliases: [],
+		actionId,
+		tile: { kind: "icon", icon: "life-buoy" },
+	} as OmniItem;
+}

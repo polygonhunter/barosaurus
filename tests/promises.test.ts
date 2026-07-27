@@ -141,6 +141,64 @@ describe("the index is read, not only written", () => {
 	});
 });
 
+describe("getting help is reachable from the bar, not only from the settings tab", () => {
+	// The same shape as every case above. `supportUrl()` built a contact URL
+	// carrying the plugin version, the Obsidian version and the platform;
+	// `openSupport()` opened it; and the one caller in the entire plugin was a
+	// button in Settings → About. The bar — the thing the user is already
+	// looking at when something breaks — had no route to either, and no test
+	// could tell, because both halves were correct in isolation.
+	const CATALOG_FILE = join(SRC, "core", "catalog.ts");
+	const EXECUTE_FILE = join(SRC, "ui", "execute.ts");
+	const MAIN_FILE = join(SRC, "main.ts");
+
+	function codeOf(file: string): string {
+		return ALL_CODE.find((entry) => entry.file === file)?.text ?? "";
+	}
+
+	it("a source offers the help entries", () => {
+		const sources = readersOf("HELP_ENTRIES", CATALOG_FILE).filter((file) =>
+			file.includes("sources"),
+		);
+		expect(
+			sources,
+			"the help entries are in the catalog and no source lists them — the bar cannot show what nothing enumerates",
+		).not.toEqual([]);
+	});
+
+	it("main.ts registers that source", () => {
+		// The ARRAY, not the file. Searching the whole of main.ts for the name
+		// is satisfied by the import line alone, which is exactly the state this
+		// case is supposed to catch: the source is compiled in, reads as wired
+		// to any grep, and is never asked for a single candidate. Verified by
+		// deleting the entry from ALL_SOURCES and leaving the import — the file
+		// -wide check stayed green.
+		const registry = /ALL_SOURCES[^=]*=\s*\[([^\]]*)\]/.exec(codeOf(MAIN_FILE))?.[1] ?? "";
+		expect(
+			/\bhelpSource\b/.test(registry),
+			"the help source exists but ALL_SOURCES does not include it — every test can pass while the bar never asks it anything",
+		).toBe(true);
+	});
+
+	it("the one dispatcher builds the support URL", () => {
+		expect(
+			codeOf(EXECUTE_FILE).includes("supportUrl"),
+			"runAction has no support case — picking the entry with Enter or from the ⌘K panel would do nothing",
+		).toBe(true);
+	});
+
+	it("the URL builder has exactly one implementation", () => {
+		// Two builders drift, and the second one is always the one that forgets
+		// the version — which is the whole reason the link carries it.
+		const builders = ALL_CODE.filter(({ text }) => text.includes("#kontakt")).map(({ file }) =>
+			file.slice(ROOT.length + 1),
+		);
+		expect(builders, "the support URL is built in more than one place").toEqual([
+			"src/core/catalog.ts",
+		]);
+	});
+});
+
 const UNSAFE_FILE = join(SRC, "ui", "unsafe.ts");
 
 describe("the capability probe is surfaced, not only computed", () => {

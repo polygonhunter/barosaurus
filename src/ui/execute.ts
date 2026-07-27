@@ -10,6 +10,13 @@ import {
 	type TAbstractFile,
 } from "obsidian";
 import { togglePinned, toggleHidden } from "../core/actions";
+import {
+	ISSUES_ACTION,
+	ISSUES_URL,
+	SUPPORT_ACTION,
+	supportUrl,
+	type SupportInfo,
+} from "../core/catalog";
 import { handlesEditing, planEdit, type EditingSettings } from "../core/editing";
 import type { OmniItem } from "../core/types";
 import { createNotePath } from "../sources/create";
@@ -74,6 +81,23 @@ export interface ExecuteHost {
 	 * needs to plan a change to the note.
 	 */
 	editingSettings?: () => EditingSettings;
+	/**
+	 * Open a URL outside Obsidian.
+	 *
+	 * Injected rather than called directly so this file keeps no opinion about
+	 * WHICH window opens it, and so a test can watch what would have been
+	 * opened without a browser ever being involved. Absent means the host has
+	 * not wired it up: the help entries then say so instead of throwing, like
+	 * every other optional member here.
+	 */
+	openExternal?: (url: string) => void;
+	/**
+	 * Plugin version, Obsidian version and platform, for the support link.
+	 * Only `src/main.ts` can answer this — `manifest`, `apiVersion` and
+	 * `Platform` all live there — so it arrives as a callback rather than
+	 * being recomputed here.
+	 */
+	supportInfo?: () => SupportInfo;
 }
 
 /**
@@ -255,6 +279,24 @@ export async function runAction(
 				return hideCommand(host, item);
 			case "run-command-on":
 				await runCommandOn(host, item, args[0] ?? "");
+				return "close";
+
+			// ---------------------------------------------- help and feedback
+			// The only two verbs that leave Obsidian, and they leave it here —
+			// on a pick, never on a load. See the privacy section of the README.
+			case SUPPORT_ACTION: {
+				const info = host.supportInfo;
+				if (info === undefined) {
+					new Notice("Barosaurus: the support link is not available in this build");
+					return "close";
+				}
+				// supportUrl() is the one builder; a second one here would be
+				// the one that forgets the version the report needs.
+				openLink(host, supportUrl(info()));
+				return "close";
+			}
+			case ISSUES_ACTION:
+				openLink(host, ISSUES_URL);
 				return "close";
 
 			// ----------------------------------------------------- selection
@@ -576,6 +618,24 @@ async function runCommandOn(host: ExecuteHost, item: OmniItem, commandId: string
 	if (!executeCommandById(app, commandId)) {
 		new Notice(`Barosaurus: “${command.name}” could not run`);
 	}
+}
+
+// -------------------------------------------------------- help and feedback
+
+/**
+ * Hand a URL to the host's opener, or explain why nothing happened.
+ *
+ * The read-then-check pair is deliberate and matches every other injected
+ * callback in this file: pulled off the host as a value, so nothing is ever an
+ * unbound method extraction.
+ */
+function openLink(host: ExecuteHost, url: string): void {
+	const open = host.openExternal;
+	if (open === undefined) {
+		new Notice("Barosaurus: this build cannot open a link");
+		return;
+	}
+	open(url);
 }
 
 // ---------------------------------------------------------------- selection

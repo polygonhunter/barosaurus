@@ -586,8 +586,9 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Privacy")
 			.setDesc(
-				"Barosaurus makes no network requests on its own and sends nothing anywhere. The one exception " +
-					"is the “Get in touch” button below, which opens your browser only when you click it.",
+				"Barosaurus makes no network requests on its own and sends nothing anywhere. The only exceptions " +
+					"are the “Get in touch” button below and the two help entries in the bar, which open your " +
+					"browser when you use them and never otherwise.",
 			);
 
 		new Setting(containerEl).setName("Internal APIs").setDesc(this.describeCapabilities());
@@ -596,7 +597,8 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 			.setName("Help and feedback")
 			.setDesc(
 				"Something not working, or an idea for what the bar should do next? The form opens with your " +
-					"version and platform already filled in.",
+					"version and platform already filled in. The bar knows the way too — type “bug”, " +
+					"“support” or “issue”.",
 			)
 			.addButton((button) =>
 				button.setButtonText("Get in touch").onClick(() => this.host.openSupport()),
