@@ -18,8 +18,8 @@ import { candidatesFromOrdered, type Source, type SourceContext } from "./source
 /** The executor switches on this prefix; the remainder is the tab id. */
 export const SETTINGS_ACTION_PREFIX = "open-settings:";
 
-/** Extra match terms, so "einstellungen" and "preferences" both land. */
-const SETTINGS_ALIASES = ["settings", "einstellungen", "preferences", "optionen", "config"];
+/** Extra match terms, English only — the rest of the catalog was cleared in 0.9.3. */
+const SETTINGS_ALIASES = ["settings", "preferences", "options", "config", "preferences pane"];
 
 export const settingsTabsSource: Source = {
 	id: "settings-tab",

@@ -1,8 +1,8 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Barosaurus">
   <defs>
     <linearGradient id="ba-tile" x1="0" y1="0" x2="0" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#8b6cf0"/>
-      <stop offset="1" stop-color="#5b3fc4"/>
+      <stop offset="0" stop-color="#ff6b9d"/>
+      <stop offset="1" stop-color="#d1275f"/>
     </linearGradient>
     <linearGradient id="ba-sheen" x1="0" y1="0" x2="0" y2="512" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#ffffff" stop-opacity="0.20"/>
@@ -39,11 +39,11 @@
   </g>
 
   <!-- eye -->
-  <circle cx="386" cy="104" r="7" fill="#4a2fa8"/>
+  <circle cx="386" cy="104" r="7" fill="#8a0f3a"/>
 
   <!-- one bar, every action: the dinosaur stands on the command bar -->
   <rect x="104" y="392" width="304" height="60" rx="30" fill="#7ef0d0"/>
   <!-- caret and the query you just typed -->
-  <rect x="134" y="408" width="6" height="28" rx="3" fill="#4a2fa8"/>
-  <rect x="156" y="418" width="86" height="8" rx="4" fill="#4a2fa8" opacity="0.55"/>
+  <rect x="134" y="408" width="6" height="28" rx="3" fill="#8a0f3a"/>
+  <rect x="156" y="418" width="86" height="8" rx="4" fill="#8a0f3a" opacity="0.55"/>
 </svg>
