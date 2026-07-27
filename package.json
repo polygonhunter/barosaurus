@@ -1,6 +1,6 @@
 {
 	"name": "barosaurus",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "A command bar for Obsidian — search, navigate and act on notes, commands, tabs and headings from a single field.",
 	"main": "main.js",
 	"type": "module",

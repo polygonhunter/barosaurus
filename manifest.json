@@ -1,7 +1,7 @@
 {
 	"id": "barosaurus",
 	"name": "Barosaurus",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"minAppVersion": "1.12.4",
 	"description": "A command bar for Obsidian — one field for notes, commands, tabs, headings, bookmarks and tags, and every result can be acted on: rename it, move it, bookmark it, format the selection. Ranked by what you are doing right now.",
 	"author": "polygonhunter",

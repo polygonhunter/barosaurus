@@ -24,7 +24,7 @@ Would you rather not spend a shortcut at all? Switch on **double-tap shift** in 
 
 ### `⌘K` opens it. `⌘K` acts.
 
-One chord, two levels. Outside the bar it opens it. Inside the bar it opens the action panel for whatever row is highlighted — rename, move, bookmark, append to today's note. Press it twice and you have gone from an empty screen to acting on a note without touching the mouse.
+One chord, two levels. Outside the bar it opens it. Inside the bar it opens the action panel for whatever row is highlighted — rename, move, bookmark, append to today's note. `⌘K`, a few letters, `⌘K`: from an empty screen to acting on a note, without touching the mouse.
 
 ## What you get
 
