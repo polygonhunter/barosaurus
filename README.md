@@ -30,7 +30,8 @@ One chord, two levels. Outside the bar it opens it. Inside the bar it opens the 
 
 - **Everything in one field** — commands, notes, tabs, headings, bookmarks, folders and tags in a single grouped list. No modes to switch into, no prefix to memorise. Empty groups disappear along with their heading, so the list is never padded with nothing.
 - **Act on any result, don't just find it** — `⌘K` opens its actions: rename, move, open to the right, copy a link, bookmark it, append it to today's note, delete it. The first action is the primary one, so `↵` usually does what you meant already.
-- **Multi-step flows stay inside the bar** — *Move to* opens a folder picker, *Colour* opens a swatch picker, each with a breadcrumb pill showing where you came from and a query that survives going back a level.
+- **Multi-step flows stay inside the bar** — *Move to* opens a folder picker, *Colour* opens a swatch picker, *Set property* asks for a name and then a value, each with a breadcrumb pill showing where you came from and a query that survives going back a level.
+- **Properties, without hunting for the note first** — with a note open, typing `author` or `status` offers to set it right there, at the top of the list. No searching for the file you are already looking at. Any property, not a fixed few, and *Remove property* to take one off again.
 - **It ranks by what you are doing** — select a sentence and everything that acts on a selection lifts, so typing `b` puts **Bold** first, ahead of every note in your vault that starts with b. Close the editor and the editor commands sink again. Not a filter, a nudge: the right thing rises, nothing useful disappears.
 - **Every command, under a name you would actually type** — every command from every plugin is there automatically, and the ones you reach for get a proper name, an icon and plain-English synonyms on top. Obsidian calls it "Toggle bold"; you can type `b`, or `bold`, or `strong`.
 - **It learns while you type** — what you use often and recently keeps its pull inside the ranking itself, not just as decoration on the empty list.
@@ -55,6 +56,7 @@ Barosaurus is the fifth plugin in the -osaurus family, next to [**Linkosaurus**]
 | `@intro` | The **Introduction** heading in the note you are in |
 | `:42` | Line 42 of the current note |
 | `meeting` | The note, the tab that already has it open, the heading inside it, grouped |
+| `author` *(with a note open)* | **Set author…** for that note, then a value — no need to find the note first |
 | `move` *(on a result)* | A folder picker, with a breadcrumb pill showing where you came from |
 | `Q3 report` *(no match)* | **Create "Q3 report"** — the empty state offers to make it |
 

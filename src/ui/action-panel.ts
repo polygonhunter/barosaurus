@@ -11,7 +11,7 @@ import {
 import { actionsFor, NONE_AVAILABLE, type PluginCapabilities } from "../core/availability";
 import { pushHistory } from "../core/history";
 import { fold } from "../core/normalize";
-import type { ActionDef, BarContext, OmniItem } from "../core/types";
+import { fileItemId, type ActionDef, type BarContext, type OmniItem } from "../core/types";
 import { fuzzyFactory, orderByMatch, type Scorable } from "../sources/files";
 import { pluginCapabilities } from "../sources/commands";
 import { runAction, type ExecuteHost } from "./execute";
@@ -61,6 +61,12 @@ export interface ActionController {
 	run(bar: BarSurface, action: ActionDef, item: OmniItem): void;
 	/** Tab and ⌘P: run an action only if it applies. False when it does not. */
 	runIfApplicable(bar: BarSurface, actionId: string, item: OmniItem, ctx: BarContext): boolean;
+	/**
+	 * Start an argument flow against a path rather than a highlighted result —
+	 * how a row in the MAIN list (not the ⌘K panel) reaches a multi-step action.
+	 * `prefilled` supplies the first argument when the row already named it.
+	 */
+	startOnPath(bar: BarSurface, actionId: string, path: string, prefilled?: string): boolean;
 	/** Command ids the user hid from the bar. */
 	hidden(): ReadonlySet<string>;
 	/** Recent queries, newest first. */
@@ -231,6 +237,54 @@ export function createActionController(host: ActionHost): ActionController {
 				(entry) => entry.id === actionId,
 			);
 			if (action === undefined) return false;
+			advance(bar, action, item);
+			return true;
+		},
+
+		startOnPath: (bar, actionId, path, prefilled) => {
+			const action = ACTIONS.find((entry) => entry.id === actionId);
+			if (action === undefined) return false;
+			// A row in the main list has no path of its own, so the flow is given
+			// a file item built from the path the row carried. Without this the
+			// root-level choose path would call runAction with an empty argument
+			// list and the action would silently do nothing — the same shape of
+			// bug that made every action look dead before 0.9.6.
+			//
+			// The real file is looked up rather than assumed: a stale path means
+			// the note was renamed or deleted while the bar was open, and the
+			// honest answer is to decline instead of writing to a guess.
+			const file = app.vault.getFileByPath(path);
+			if (file === null) return false;
+			const item: OmniItem = {
+				id: fileItemId(path),
+				kind: "file",
+				source: "file",
+				group: "files",
+				title: file.basename,
+				aliases: [],
+				tile: { kind: "icon", icon: "file-text" },
+				path,
+				resultKind: file.extension === "md" ? "note" : "file",
+				mtime: file.stat.mtime,
+			};
+			if (prefilled === undefined) {
+				advance(bar, action, item);
+				return true;
+			}
+			// The row already named the property, so that page is skipped: push a
+			// level that carries the value and let `advance` ask for the rest.
+			bar.pushPage(
+				{
+					kind: "prefilled",
+					label: prefilled,
+					placeholder: "",
+					emptyText: "",
+					rows: () => [],
+					choose: () => undefined,
+				},
+				"",
+			);
+			bar.commit(prefilled);
 			advance(bar, action, item);
 			return true;
 		},

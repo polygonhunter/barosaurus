@@ -281,6 +281,7 @@ export const DEFAULT_TYPE_WEIGHTS: TypeWeights = {
 export type ArgumentPicker =
 	| { kind: "folder"; prompt: string }
 	| { kind: "tag"; prompt: string }
+	| { kind: "property"; prompt: string }
 	| { kind: "template"; prompt: string }
 	| { kind: "color"; prompt: string }
 	| { kind: "align"; prompt: string }

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { argumentCount, nextArgument } from "../src/core/actions";
+import type { ActionDef } from "../src/core/types";
 import {
 	breadcrumbs,
 	collectedValues,
@@ -154,5 +156,86 @@ describe("breadcrumbs and collected values", () => {
 		const state = setValue(createStack(), "ignored");
 		expect(collectedValues(state)).toEqual([]);
 		expect(breadcrumbs(state)).toEqual([]);
+	});
+});
+
+/**
+ * Two arguments in a row.
+ *
+ * `nextArgument`/`argumentCount` were written for N arguments and the recursion
+ * in `advance` (src/ui/action-panel.ts:178) says as much in its comment, but
+ * every one of the thirty actions declares exactly one. The two-argument path
+ * has therefore never run. "Set property…" is the first action to need it, so
+ * the contract gets pinned down before anything depends on it.
+ *
+ * This mirrors `advance` step for step: read what has been collected, ask for
+ * the next picker, push a level, commit a value, repeat until there is no next
+ * picker. The panel level itself is pushed first and never collects, which is
+ * exactly why `collectedValues` has to skip valueless levels.
+ */
+describe("a two-argument flow", () => {
+	const twoArg: ActionDef = {
+		id: "set-property",
+		name: "Set property…",
+		aliases: [],
+		icon: "list-plus",
+		appliesTo: () => true,
+		arguments: [
+			{ kind: "property", prompt: "Property" },
+			{ kind: "text", prompt: "Value", placeholder: "Value" },
+		],
+	};
+
+	/** The loop from `advance`, with the picker choices supplied up front. */
+	function runFlow(action: ActionDef, choices: readonly string[]): string[] {
+		// Level 1 is the ⌘K panel: pushed, never given a value.
+		let state = push(createStack(), { kind: "actions", label: "Actions" });
+		for (let guard = 0; guard < 10; guard += 1) {
+			const collected = collectedValues(state);
+			const picker = nextArgument(action, collected.length);
+			if (picker === null) return collected;
+			state = push(state, { kind: picker.kind, label: picker.prompt });
+			const choice = choices[collected.length];
+			if (choice !== undefined) state = setValue(state, choice);
+		}
+		throw new Error("flow did not terminate");
+	}
+
+	it("reports two arguments", () => {
+		expect(argumentCount(twoArg)).toBe(2);
+	});
+
+	it("asks for the second picker only after the first has a value", () => {
+		let state = push(createStack(), { kind: "actions", label: "Actions" });
+		expect(nextArgument(twoArg, collectedValues(state).length)?.prompt).toBe("Property");
+
+		state = push(state, { kind: "property", label: "Property" });
+		// Pushed but not chosen yet: still argument one, or the flow would skip
+		// a step every time a picker took a moment.
+		expect(nextArgument(twoArg, collectedValues(state).length)?.prompt).toBe("Property");
+
+		state = setValue(state, "author");
+		expect(nextArgument(twoArg, collectedValues(state).length)?.prompt).toBe("Value");
+	});
+
+	it("hands the action both values in push order", () => {
+		expect(runFlow(twoArg, ["author", "Ada Lovelace"])).toEqual(["author", "Ada Lovelace"]);
+	});
+
+	it("stops asking once both are collected", () => {
+		let state = push(createStack(), { kind: "actions", label: "Actions" });
+		state = setValue(push(state, { kind: "property", label: "Property" }), "author");
+		state = setValue(push(state, { kind: "text", label: "Value" }), "Ada Lovelace");
+		expect(nextArgument(twoArg, collectedValues(state).length)).toBeNull();
+	});
+
+	it("still works for the one-argument actions that ship today", () => {
+		const oneArg: ActionDef = {
+			...twoArg,
+			id: "move",
+			arguments: [{ kind: "folder", prompt: "Move to folder" }],
+		};
+		expect(argumentCount(oneArg)).toBe(1);
+		expect(runFlow(oneArg, ["Projects/"])).toEqual(["Projects/"]);
 	});
 });

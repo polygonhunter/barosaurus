@@ -17,6 +17,7 @@ import { OcrPipeline } from "./ocr/pipeline";
 import { readContext } from "./services/context-service";
 import { bookmarksSource } from "./sources/bookmarks";
 import { commandsSource } from "./sources/commands";
+import { propertiesSource } from "./sources/properties";
 import { createSource } from "./sources/create";
 import { filesSource } from "./sources/files";
 import { foldersSource } from "./sources/folders";
@@ -76,6 +77,7 @@ export const ALL_SOURCES: readonly (Source | StreamingSource)[] = [
 	settingsTabsSource,
 	ghostSource,
 	createSource,
+	propertiesSource,
 ];
 
 export default class BarosaurusPlugin extends Plugin {

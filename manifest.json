@@ -1,7 +1,7 @@
 {
 	"id": "barosaurus",
 	"name": "Barosaurus",
-	"version": "1.0.3",
+	"version": "1.0.4",
 	"minAppVersion": "1.12.4",
 	"description": "Open one command bar for notes, commands, tabs, headings, bookmarks and tags, then act on any result in place: rename it, move it, bookmark it, format the selection. Ranked by what you are doing right now.",
 	"author": "polygonhunter",

@@ -241,6 +241,12 @@ export async function runAction(
 			case "add-tag":
 				await addTag(app, item, args[0] ?? "");
 				return "close";
+			case "set-property":
+				await setProperty(app, item, args[0] ?? "", args[1] ?? "");
+				return "close";
+			case "remove-property":
+				await removeProperty(app, item, args[0] ?? "");
+				return "close";
 			case "delete":
 				await confirmAndTrash(app, item);
 				return "close";
@@ -415,6 +421,68 @@ async function addTag(app: App, item: OmniItem, rawTag: string): Promise<void> {
 		frontmatter["tags"] = [...tags, tag];
 	});
 	new Notice(`Tagged #${tag}`);
+}
+
+/**
+ * Any frontmatter field, through the same public `processFrontMatter` that
+ * `addTag` uses (@since 1.4.4, comfortably under the 1.12.4 floor).
+ *
+ * The value stays a string, with one exception that mirrors `addTag`: when the
+ * field already holds a LIST, a comma-separated value is written back as a list
+ * rather than flattened into one string. Overwriting `aliases: [a, b]` with the
+ * literal text "a, b" would quietly change the note's meaning, and a property
+ * editor that corrupts the shape of what it edits is worse than none.
+ *
+ * Typed properties (number, checkbox, date) are deliberately out of scope here:
+ * the type lives in `app.metadataTypeManager`, which is undocumented and would
+ * belong behind src/ui/unsafe.ts. Obsidian coerces a string to the declared
+ * type on read, so a text write is correct, just not clever.
+ */
+async function setProperty(
+	app: App,
+	item: OmniItem,
+	rawKey: string,
+	rawValue: string,
+): Promise<void> {
+	const file = fileFor(app, item);
+	if (file === null) return;
+	const key = rawKey.trim();
+	if (key.length === 0) return;
+	const value = rawValue.trim();
+	await app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+		frontmatter[key] = Array.isArray(frontmatter[key])
+			? value
+					.split(",")
+					.map((entry) => entry.trim())
+					.filter((entry) => entry.length > 0)
+			: value;
+	});
+	new Notice(`Set ${key}`);
+}
+
+/** Delete a frontmatter field. Absent key: nothing to do, and no scary notice. */
+async function removeProperty(app: App, item: OmniItem, rawKey: string): Promise<void> {
+	const file = fileFor(app, item);
+	if (file === null) return;
+	const key = rawKey.trim();
+	if (key.length === 0) return;
+	let existed = false;
+	await app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+		existed = key in frontmatter;
+		delete frontmatter[key];
+	});
+	new Notice(existed ? `Removed ${key}` : `No ${key} on this note`);
+}
+
+/** The file an item points at, or null with the notice already shown. */
+function fileFor(app: App, item: OmniItem): TFile | null {
+	const path = pathOf(item);
+	const file = path === null ? null : app.vault.getFileByPath(path);
+	if (file === null) {
+		new Notice("Barosaurus: that file is gone");
+		return null;
+	}
+	return file;
 }
 
 /**

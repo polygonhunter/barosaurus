@@ -173,6 +173,55 @@ function tagRows(app: App, query: string): OmniItem[] {
 	return rows;
 }
 
+// ------------------------------------------------------------- properties
+
+/**
+ * Property keys already used anywhere in the vault, with a note count.
+ *
+ * Deliberately gathered by reading `frontmatter` off the metadata cache rather
+ * than through `metadataCache.getAllPropertyInfos()`: that one is undocumented,
+ * which makes it an API-floor question we cannot answer, and this is the same
+ * read `src/sources/files.ts` already does for aliases. A miss costs a longer
+ * list, never a wrong write.
+ *
+ * `position` is the cache's own bookkeeping, not a user property, so it goes.
+ */
+const NON_PROPERTY_KEYS: ReadonlySet<string> = new Set(["position"]);
+
+export function vaultPropertyKeys(app: App): Array<{ key: string; count: number }> {
+	const counts = new Map<string, number>();
+	for (const file of app.vault.getMarkdownFiles()) {
+		const frontmatter = app.metadataCache.getFileCache(file)?.frontmatter;
+		if (frontmatter === undefined || frontmatter === null) continue;
+		for (const key of Object.keys(frontmatter)) {
+			if (NON_PROPERTY_KEYS.has(key)) continue;
+			counts.set(key, (counts.get(key) ?? 0) + 1);
+		}
+	}
+	return [...counts.entries()]
+		.map(([key, count]) => ({ key, count }))
+		.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+}
+
+function propertyRows(app: App, query: string): OmniItem[] {
+	const entries: Array<Scorable<OmniItem>> = vaultPropertyKeys(app).map(({ key, count }) => ({
+		value: valueRow(
+			key,
+			key,
+			{ kind: "icon", icon: "list" },
+			`${count} ${count === 1 ? "note" : "notes"}`,
+		),
+		terms: [fold(key)],
+	}));
+	const rows = ordered(entries, query, PICKER_LIMIT);
+	// A property nobody has used yet is a perfectly good answer, same as a tag.
+	const typed = query.trim();
+	if (typed.length > 0 && !rows.some((row) => valueOf(row) === typed)) {
+		rows.unshift(valueRow(typed, typed, { kind: "icon", icon: "plus" }, "New property"));
+	}
+	return rows;
+}
+
 // -------------------------------------------------------------- templates
 
 /**
@@ -329,6 +378,15 @@ export function pageFor(picker: ArgumentPicker, app: App): BarPage {
 				placeholder: "Search or type a tag…",
 				emptyText: "Type a tag.",
 				rows: (query) => tagRows(app, query),
+				choose: commitRow,
+			};
+		case "property":
+			return {
+				kind: "property",
+				label: picker.prompt,
+				placeholder: "Search or type a property…",
+				emptyText: "Type a property name.",
+				rows: (query) => propertyRows(app, query),
 				choose: commitRow,
 			};
 		case "template":

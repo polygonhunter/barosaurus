@@ -180,6 +180,40 @@ describe("getting help is reachable from the bar, not only from the settings tab
 		).toBe(true);
 	});
 
+	/**
+	 * A raw NUL byte in a source file is invisible in a diff, makes grep report
+	 * the file as binary, and got into src/sources/properties.ts by being typed
+	 * rather than escaped. The separator itself is fine; writing it literally is
+	 * not.
+	 */
+	it("no source file contains a raw control character", () => {
+		const offenders: string[] = [];
+		for (const file of FILES) {
+			if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(readFileSync(file, "utf8"))) {
+				offenders.push(file);
+			}
+		}
+		expect(offenders, `raw control characters in: ${offenders.join(", ")}`).toEqual([]);
+	});
+
+	// Same trap, next source. Every source file that exports a `<name>Source`
+	// has to appear in the array, or it is dead weight that greps as wired.
+	it("main.ts registers every source that exists", () => {
+		const registry = /ALL_SOURCES[^=]*=\s*\[([^\]]*)\]/.exec(codeOf(MAIN_FILE))?.[1] ?? "";
+		const missing: string[] = [];
+		for (const file of readdirSync(join(__dirname, "..", "src", "sources"))) {
+			if (!file.endsWith(".ts")) continue;
+			const code = readFileSync(join(__dirname, "..", "src", "sources", file), "utf8");
+			for (const [, name] of code.matchAll(/export const (\w+Source)\s*:/g)) {
+				if (name !== undefined && !new RegExp(`\\b${name}\\b`).test(registry)) missing.push(name);
+			}
+		}
+		expect(
+			missing,
+			`these sources exist and ALL_SOURCES does not include them: ${missing.join(", ")}`,
+		).toEqual([]);
+	});
+
 	it("the one dispatcher builds the support URL", () => {
 		expect(
 			codeOf(EXECUTE_FILE).includes("supportUrl"),

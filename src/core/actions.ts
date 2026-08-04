@@ -37,7 +37,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "run",
 		name: "Run",
-		aliases: ["ausführen", "run", "execute"],
+		aliases: ["run", "execute"],
 		icon: "play",
 		shortcut: "↵",
 		appliesTo: (item) => item.kind === "command" || item.kind === "action",
@@ -45,7 +45,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "open",
 		name: "Open",
-		aliases: ["öffnen", "open"],
+		aliases: ["open", "run"],
 		icon: "file-text",
 		shortcut: "↵",
 		appliesTo: (item) => isFileLike(item) || item.kind === "folder" || item.kind === "tab",
@@ -63,7 +63,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "open-new-tab",
 		name: "Open in new tab",
-		aliases: ["neuer tab", "new tab"],
+		aliases: ["new tab"],
 		icon: "plus",
 		shortcut: "⌘↵",
 		appliesTo: (item) => isFileLike(item),
@@ -71,7 +71,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "open-split",
 		name: "Open to the right",
-		aliases: ["rechts öffnen", "split", "teilen"],
+		aliases: ["split", "open right", "side by side"],
 		icon: "separator-vertical",
 		shortcut: "⌘⌥↵",
 		appliesTo: (item) => isFileLike(item),
@@ -79,7 +79,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "open-window",
 		name: "Open in new window",
-		aliases: ["neues fenster", "new window", "popout"],
+		aliases: ["new window", "popout"],
 		icon: "picture-in-picture-2",
 		shortcut: "⌘⌥⇧↵",
 		appliesTo: (item) => isFileLike(item),
@@ -97,7 +97,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "copy-link",
 		name: "Copy link",
-		aliases: ["link kopieren", "copy link"],
+		aliases: ["copy link"],
 		icon: "copy",
 		shortcut: "⌘C",
 		appliesTo: (item) => isFileLike(item),
@@ -105,7 +105,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "copy-uri",
 		name: "Copy Obsidian URI",
-		aliases: ["uri kopieren", "obsidian url", "copy uri", "deep link"],
+		aliases: ["obsidian url", "copy uri", "deep link"],
 		icon: "external-link",
 		appliesTo: (item) => hasPath(item),
 	},
@@ -114,7 +114,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "rename",
 		name: "Rename…",
-		aliases: ["umbenennen", "rename"],
+		aliases: ["rename"],
 		icon: "pencil",
 		arguments: [{ kind: "text", prompt: "New name", placeholder: "Name" }],
 		appliesTo: (item) => item.kind === "file" || item.kind === "folder",
@@ -122,7 +122,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "move",
 		name: "Move to…",
-		aliases: ["verschieben", "move", "ordner wechseln"],
+		aliases: ["move", "move to folder"],
 		icon: "folder-input",
 		arguments: [{ kind: "folder", prompt: "Move to folder" }],
 		appliesTo: (item) => item.kind === "file" || item.kind === "folder",
@@ -135,10 +135,34 @@ export const ACTIONS: readonly ActionDef[] = [
 		arguments: [{ kind: "tag", prompt: "Tag" }],
 		appliesTo: (item) => item.kind === "file",
 	},
+	/**
+	 * The first two-argument actions in the registry: a key, then a value.
+	 * `tags` had a dedicated action long before this; it stays, because "Add
+	 * tag…" appends to a list while this one sets a field.
+	 */
+	{
+		id: "set-property",
+		name: "Set property…",
+		aliases: ["set property", "property", "frontmatter", "author", "status", "metadata"],
+		icon: "list-plus",
+		arguments: [
+			{ kind: "property", prompt: "Property" },
+			{ kind: "text", prompt: "Value", placeholder: "Value" },
+		],
+		appliesTo: (item) => item.kind === "file",
+	},
+	{
+		id: "remove-property",
+		name: "Remove property…",
+		aliases: ["remove property", "delete property", "clear property"],
+		icon: "list-x",
+		arguments: [{ kind: "property", prompt: "Property" }],
+		appliesTo: (item) => item.kind === "file",
+	},
 	{
 		id: "bookmark",
 		name: "Bookmark",
-		aliases: ["lesezeichen", "bookmark", "merken"],
+		aliases: ["bookmark", "save"],
 		icon: "bookmark",
 		requiresCorePlugin: "bookmarks",
 		appliesTo: (item) => isFileLike(item) || item.kind === "folder",
@@ -154,7 +178,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "reveal-explorer",
 		name: "Show in file explorer",
-		aliases: ["im explorer zeigen", "reveal", "dateibaum"],
+		aliases: ["reveal", "file tree", "show in explorer"],
 		icon: "folder-tree",
 		requiresCorePlugin: "file-explorer",
 		appliesTo: (item) => hasPath(item),
@@ -162,14 +186,14 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "reveal-system",
 		name: "Show in system folder",
-		aliases: ["im finder zeigen", "im ordner zeigen", "finder", "explorer", "system"],
+		aliases: ["finder", "explorer", "system", "show in folder"],
 		icon: "external-link",
 		appliesTo: (item) => hasPath(item),
 	},
 	{
 		id: "delete",
 		name: "Delete",
-		aliases: ["löschen", "delete", "papierkorb", "trash"],
+		aliases: ["delete", "trash", "remove"],
 		icon: "trash-2",
 		appliesTo: (item) => item.kind === "file" || item.kind === "folder",
 	},
@@ -178,14 +202,14 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "assign-hotkey",
 		name: "Assign hotkey…",
-		aliases: ["tastenkürzel", "hotkey", "shortcut zuweisen"],
+		aliases: ["hotkey", "shortcut", "assign shortcut"],
 		icon: "keyboard",
 		appliesTo: (item) => item.kind === "command",
 	},
 	{
 		id: "pin",
 		name: "Pin",
-		aliases: ["anheften", "pin", "oben halten"],
+		aliases: ["pin", "keep on top"],
 		icon: "pin",
 		shortcut: "⌘P",
 		appliesTo: () => true,
@@ -193,14 +217,14 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "hide",
 		name: "Hide from this bar",
-		aliases: ["ausblenden", "hide", "verstecken"],
+		aliases: ["hide", "conceal"],
 		icon: "eye-off",
 		appliesTo: (item) => item.kind === "command",
 	},
 	{
 		id: "run-command-on",
 		name: "Run any command on this…",
-		aliases: ["befehl anwenden", "run command", "befehl ausführen auf"],
+		aliases: ["run command", "apply command", "run command on"],
 		icon: "terminal",
 		arguments: [{ kind: "text", prompt: "Command", placeholder: "Search commands" }],
 		appliesTo: (item) => isFileLike(item),
@@ -235,7 +259,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "to-bullets",
 		name: "Turn into bullet points",
-		aliases: ["in stichpunkte umwandeln", "stichpunkte", "aufzählung", "bullets"],
+		aliases: ["bullets", "bullet list", "to list"],
 		icon: "list",
 		appliesTo: (_item, ctx) => ctx.selection.length > 0 && ctx.hasEditor,
 	},
@@ -256,7 +280,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "text-color",
 		name: "Text colour…",
-		aliases: ["schriftfarbe", "farbe", "text colour", "text color", "einfärben"],
+		aliases: ["text colour", "text color", "colour", "color"],
 		icon: "palette",
 		arguments: [{ kind: "color", prompt: "Colour" }],
 		appliesTo: (_item, ctx) => ctx.selection.length > 0 && ctx.hasEditor,
@@ -264,7 +288,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "background-color",
 		name: "Highlight colour…",
-		aliases: ["hintergrundfarbe", "markierungsfarbe", "background colour", "highlight"],
+		aliases: ["background colour", "background color", "highlight"],
 		icon: "highlighter",
 		arguments: [{ kind: "color", prompt: "Colour" }],
 		appliesTo: (_item, ctx) => ctx.selection.length > 0 && ctx.hasEditor,
@@ -272,7 +296,7 @@ export const ACTIONS: readonly ActionDef[] = [
 	{
 		id: "align",
 		name: "Align…",
-		aliases: ["ausrichten", "ausrichtung", "align", "zentrieren"],
+		aliases: ["align", "alignment", "centre", "center"],
 		icon: "align-center",
 		arguments: [{ kind: "align", prompt: "Alignment" }],
 		appliesTo: (_item, ctx) => ctx.selection.length > 0 && ctx.hasEditor,

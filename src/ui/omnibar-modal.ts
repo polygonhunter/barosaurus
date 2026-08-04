@@ -9,6 +9,7 @@ import {
 	type SearchResultContainer,
 } from "obsidian";
 import { withoutHidden } from "../core/actions";
+import { parsePropertyAction } from "../sources/properties";
 import { groupRows, type GroupedRows, type GroupingOptions } from "../core/grouping";
 import {
 	breadcrumbs,
@@ -654,6 +655,21 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		if (page !== undefined) {
 			page.choose(row, this.surface);
 			return;
+		}
+
+		// A property row from the main list names an action AND its target, and
+		// that action collects arguments — so it has to enter the page flow here
+		// rather than fall through to onChoose, which runs actions with no
+		// arguments at all.
+		const actions = this.options.actions;
+		if (actions !== undefined && !isGroupHeader(row) && row.kind === "action") {
+			const parsed = parsePropertyAction(row.actionId);
+			if (parsed !== null) {
+				this.options.actions?.rememberQuery(this.inputEl.value);
+				this.historyIndex = -1;
+				actions.startOnPath(this.surface, parsed.action, parsed.path, parsed.key ?? undefined);
+				return;
+			}
 		}
 
 		// Only a query that led somewhere is worth recalling.

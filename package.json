@@ -1,6 +1,6 @@
 {
 	"name": "barosaurus",
-	"version": "1.0.3",
+	"version": "1.0.4",
 	"description": "Open one command bar for notes, commands, tabs and headings, then act on any result in place.",
 	"main": "main.js",
 	"type": "module",
