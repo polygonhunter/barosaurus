@@ -49,6 +49,8 @@ export class Indexer {
 	private readonly queued = new Set<string>();
 	private processing = false;
 	private stopped = false;
+	/** The snapshot write in flight, so stop() can close the db after it. */
+	private pendingSave: Promise<void> | null = null;
 
 	constructor(
 		private readonly app: App,
@@ -126,9 +128,16 @@ export class Indexer {
 		});
 	}
 
+	/**
+	 * Plugin unload. A snapshot that is still waiting on its debounce is
+	 * written NOW rather than cancelled — cancelling it threw away every change
+	 * of the last quiet period, and the next start had to re-index them.
+	 */
 	stop(): void {
+		this.saveSoon.run();
 		this.stopped = true;
-		this.saveSoon.cancel();
+		const pending = this.pendingSave ?? Promise.resolve();
+		void pending.finally(() => this.persistence.close());
 	}
 
 	/** Wipe everything and re-index from scratch (settings escape hatch). */
@@ -325,7 +334,7 @@ export class Indexer {
 	/** Persisting is cheap but not free — debounce behind quiet periods. */
 	private readonly saveSoon = debounce(
 		() => {
-			void this.persistence.save(
+			this.pendingSave = this.persistence.save(
 				this.weights,
 				this.engine.toJSON(),
 				Object.fromEntries(this.indexedFiles),

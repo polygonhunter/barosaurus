@@ -80,9 +80,34 @@ export class IndexPersistence {
 			// popout, and IndexedDB is shared across windows of one origin.
 			const request = window.indexedDB.open(this.dbName, 1);
 			request.onupgradeneeded = () => request.result.createObjectStore(STORE);
-			this.dbPromise = asPromise(request as IDBRequest<IDBDatabase>);
+			this.dbPromise = asPromise(request as IDBRequest<IDBDatabase>).then((db) => {
+				// Another window (or a reloaded plugin) wants to upgrade or
+				// delete this database. Holding on would block it forever;
+				// letting go only costs us a re-open on the next save.
+				db.onversionchange = () => {
+					db.close();
+					this.dbPromise = null;
+				};
+				return db;
+			});
 		}
 		return this.dbPromise;
+	}
+
+	/**
+	 * Release the connection (plugin unload). A reload otherwise opens a
+	 * second connection next to the one the old instance never closed.
+	 * Transactions already started still complete — close() waits for them.
+	 */
+	async close(): Promise<void> {
+		const pending = this.dbPromise;
+		this.dbPromise = null;
+		if (!pending) return;
+		try {
+			(await pending).close();
+		} catch {
+			// never opened — nothing to close
+		}
 	}
 
 	/** Returns null on miss or schema/weights mismatch (→ full rebuild). */

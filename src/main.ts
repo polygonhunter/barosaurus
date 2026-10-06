@@ -164,6 +164,9 @@ export default class BarosaurusPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		// Frecency, history, pins and settings edited in the last two seconds
+		// are still sitting in the debounce. Cancelling by unloading lost them.
+		this.saveDataSoon.run();
 		this.indexer?.stop();
 		this.indexer = null;
 		void this.ocr?.destroy();
