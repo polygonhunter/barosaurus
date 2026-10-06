@@ -3,7 +3,7 @@ import type { UserSnippet } from "./core/blocks";
 import { parseExcludedFolders } from "./core/paths";
 import type { ColorMode } from "./core/style";
 import type { OcrController } from "./ocr/pipeline";
-import { capabilities, missingCapabilities, openSettingsTab } from "./ui/unsafe";
+import { capabilities, formatChord, missingCapabilities, openSettingsTab } from "./ui/unsafe";
 
 /**
  * Settings for Barosaurus.
@@ -183,8 +183,8 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 			.setDesc(
 				"Barosaurus ships without a shortcut, because a plugin should not take one from you. " +
 					"Assign one under Settings → Hotkeys, searching for “Barosaurus: Open”. " +
-					"Cmd+K is the natural home; note that Obsidian uses it for “Insert link”, so you " +
-					"would move that one to Cmd+Shift+K first.",
+					`${formatChord("⌘K")} is the natural home; note that Obsidian uses it for “Insert link”, ` +
+					`so you would move that one to ${formatChord("⌘⇧K")} first.`,
 			)
 			.addButton((button) =>
 				button
@@ -356,8 +356,8 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 			.setName("Pinned entries")
 			.setDesc(
 				settings.pins.length === 0
-					? "Nothing pinned yet. Press Cmd+P on any result to pin it to the top."
-					: `${settings.pins.length} pinned. Press Cmd+P on a result to pin or unpin it.`,
+					? `Nothing pinned yet. Press ${formatChord("⌘P")} on any result to pin it to the top.`
+					: `${settings.pins.length} pinned. Press ${formatChord("⌘P")} on a result to pin or unpin it.`,
 			)
 			.addButton((button) =>
 				button

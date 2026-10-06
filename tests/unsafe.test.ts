@@ -4,6 +4,7 @@ import {
 	executeCommandById,
 	findCommand,
 	forceUpdateSuggestions,
+	formatChord,
 	getAllVaultTags,
 	getBookmarkItems,
 	getChooser,
@@ -519,5 +520,22 @@ describe("capabilities", () => {
 		};
 		expect(() => capabilities(app)).not.toThrow();
 		expect(opened).toBe(0);
+	});
+});
+
+describe("formatChord", () => {
+	it("writes mac chords for Windows and Linux keyboards", () => {
+		vi.stubGlobal("navigator", { platform: "Win32", userAgent: "Windows NT" });
+		expect(formatChord("⌘K")).toBe("Ctrl+K");
+		expect(formatChord("⌘⌥⇧↵")).toBe("Ctrl+Alt+Shift+↵");
+		expect(formatChord("⌘1–9")).toBe("Ctrl+1–9");
+		expect(formatChord("↑↓")).toBe("↑↓");
+		vi.unstubAllGlobals();
+	});
+
+	it("leaves them alone on a Mac", () => {
+		vi.stubGlobal("navigator", { platform: "MacIntel", userAgent: "Macintosh" });
+		expect(formatChord("⌘⇧K")).toBe("⌘⇧K");
+		vi.unstubAllGlobals();
 	});
 });

@@ -49,7 +49,7 @@ import type { BarPage, BarSurface } from "./picker";
 import { SelectionPill } from "./pill";
 import { PreviewPane, previewTargetFor, shouldMountPreview } from "./preview";
 import { renderRow } from "./render";
-import { forceUpdateSuggestions } from "./unsafe";
+import { forceUpdateSuggestions, formatChord } from "./unsafe";
 
 /** How long the entrance stagger class stays on (first paint only). */
 const ENTER_DURATION_MS = 450;
@@ -81,14 +81,20 @@ function pause(win: Window, ms: number, signal: AbortSignal): Promise<void> {
 	});
 }
 
-const DEFAULT_INSTRUCTIONS: Instruction[] = [
-	{ command: "↑↓", purpose: "Navigate" },
-	{ command: "↵", purpose: "Open" },
-	{ command: "⌘K", purpose: "Actions" },
-	{ command: "⌘↵", purpose: "New tab" },
-	{ command: "⌘1–9", purpose: "Pick directly" },
-	{ command: "esc", purpose: "Back" },
-];
+/**
+ * The footer. Built when a bar is constructed, not at module load, so the
+ * chords are written for the keyboard actually in front of the user.
+ */
+function defaultInstructions(): Instruction[] {
+	return [
+		{ command: "↑↓", purpose: "Navigate" },
+		{ command: "↵", purpose: "Open" },
+		{ command: formatChord("⌘K"), purpose: "Actions" },
+		{ command: formatChord("⌘↵"), purpose: "New tab" },
+		{ command: formatChord("⌘1–9"), purpose: "Pick directly" },
+		{ command: "esc", purpose: "Back" },
+	];
+}
 
 /** While a page is on top, most of the root layer means nothing. */
 const PAGE_INSTRUCTIONS: Instruction[] = [
@@ -268,7 +274,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		this.setPlaceholder(options.placeholder ?? "Search, jump or do something…");
 		this.emptyStateText = "No matches.";
 		this.limit = DEFAULT_SOURCE_LIMIT;
-		this.setInstructions(options.instructions ?? DEFAULT_INSTRUCTIONS);
+		this.setInstructions(options.instructions ?? defaultInstructions());
 
 		// Breadcrumb pills sit left of the input, inside its own container.
 		const inputParent = this.inputEl.parentElement ?? this.modalEl;
@@ -998,7 +1004,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 			page?.placeholder ?? this.options.placeholder ?? "Search, jump or do something…",
 		);
 		this.setInstructions(
-			page === undefined ? (this.options.instructions ?? DEFAULT_INSTRUCTIONS) : PAGE_INSTRUCTIONS,
+			page === undefined ? (this.options.instructions ?? defaultInstructions()) : PAGE_INSTRUCTIONS,
 		);
 		this.modalEl.toggleClass("is-nested", page !== undefined);
 		this.renderBreadcrumbs();

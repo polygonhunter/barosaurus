@@ -249,6 +249,30 @@ function isAppleKeyboard(): boolean {
 	return /mac|iphone|ipad|ipod/i.test(`${platform} ${agent}`);
 }
 
+/** Mac glyphs as the other platforms write them. */
+const GLYPH_NAMES: Record<string, string> = { "⌘": "Ctrl", "⌃": "Ctrl", "⌥": "Alt", "⇧": "Shift" };
+
+/**
+ * A chord written the macOS way ("⌘K", "⌘⌥↵", "⌘1–9") as THIS keyboard shows
+ * it: unchanged on a Mac, "Ctrl+K", "Ctrl+Alt+↵", "Ctrl+1–9" elsewhere. The
+ * footer, the ⌘K panel and the settings all used to show ⌘ to Windows and
+ * Linux users, whose keyboards have no such key.
+ */
+export function formatChord(chord: string): string {
+	if (isAppleKeyboard()) return chord;
+	const parts: string[] = [];
+	let rest = chord;
+	while (rest.length > 0) {
+		const glyph = rest[0] ?? "";
+		const name = GLYPH_NAMES[glyph];
+		if (name === undefined) break;
+		if (!parts.includes(name)) parts.push(name);
+		rest = rest.slice(1);
+	}
+	if (parts.length === 0) return chord;
+	return rest.length > 0 ? [...parts, rest].join("+") : parts.join("+");
+}
+
 function formatHotkey(hotkey: RawHotkey): string {
 	const mac = isAppleKeyboard();
 	const table = mac ? MAC_MODIFIERS : OTHER_MODIFIERS;

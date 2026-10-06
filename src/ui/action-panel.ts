@@ -16,6 +16,7 @@ import { fileItemId, type ActionDef, type BarContext, type OmniItem } from "../c
 import { fuzzyFactory, orderByMatch, type Scorable } from "../sources/files";
 import { pluginCapabilities } from "../sources/commands";
 import { runAction, type ExecuteHost } from "./execute";
+import { formatChord } from "./unsafe";
 import { commandPage, pageFor, type BarPage, type BarSurface } from "./picker";
 
 /**
@@ -98,7 +99,7 @@ function actionRow(action: ActionDef, item: OmniItem, host: ActionHost): OmniIte
 		tile: { kind: "icon", icon: action.icon },
 		actionId: action.id,
 	};
-	return action.shortcut === undefined ? row : { ...row, hotkey: action.shortcut };
+	return action.shortcut === undefined ? row : { ...row, hotkey: formatChord(action.shortcut) };
 }
 
 /**
