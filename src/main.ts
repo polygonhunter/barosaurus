@@ -101,6 +101,11 @@ export default class BarosaurusPlugin extends Plugin {
 		);
 		this.indexer = new Indexer(this.app, this.engine, DEFAULT_WEIGHTS, {
 			getSettings: () => ({ excludedFolders: this.settings.excludedFolders }),
+			// Recognized text lives in the OCR cache; the indexer reads it per
+			// attachment so a modify/rename/rebuild keeps it, and hands every
+			// (re)indexed attachment back so a changed image gets recognized.
+			extractedTextFor: (file) => this.ocr?.cachedText(file) ?? null,
+			onAttachmentIndexed: (file) => this.ocr?.consider(file, "high"),
 		});
 
 		// Obsidian prefixes the plugin name itself, so this renders as
@@ -146,8 +151,11 @@ export default class BarosaurusPlugin extends Plugin {
 		// existing file while the vault loads.
 		this.app.workspace.onLayoutReady(() => {
 			void (async () => {
-				await this.indexer?.start(this);
+				// OCR first: its cache must be loaded before the indexer asks it
+				// for text, or the first attachments would be indexed empty and
+				// queued for a recognition the cache already holds.
 				await this.ocr?.init(this);
+				await this.indexer?.start(this);
 				if (this.settings.ocrEnabled || this.settings.indexPdfText) {
 					await this.ocr?.enable();
 				}

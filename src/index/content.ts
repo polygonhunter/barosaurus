@@ -45,10 +45,19 @@ export function attachmentDoc(file: TFile, extractedText = ""): IndexedDoc {
  * Build the index doc(s) for one vault file. Notes get their metadata-cache
  * fields (aliases, headings, tags) plus the body and one link doc per
  * external URL; anything else becomes a single attachment doc.
+ *
+ * `extractedText` is what the OCR/PDF cache already holds for an attachment.
+ * Passing it here — rather than writing an empty doc and waiting for the
+ * pipeline to fill it again — is what keeps a rename, a modify or a rebuild
+ * from wiping recognized text out of the index.
  */
-export async function extractDocs(app: App, file: TFile): Promise<IndexedDoc[]> {
+export async function extractDocs(
+	app: App,
+	file: TFile,
+	extractedText = "",
+): Promise<IndexedDoc[]> {
 	const doc = emptyDoc(file);
-	if (doc.kind !== "note") return [attachmentDoc(file)];
+	if (doc.kind !== "note") return [attachmentDoc(file, extractedText)];
 
 	// Read metadata from the cache rather than re-parsing: by the time
 	// metadataCache fires 'changed' this is already up to date.

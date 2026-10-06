@@ -48,12 +48,21 @@ export interface OcrController {
  * immediately while both switches are off, and `enable` is only ever called
  * from the settings toggle.
  */
+function isPdf(file: TFile): boolean {
+	return file.extension.toLowerCase() === "pdf";
+}
+
 export class OcrPipeline implements OcrController {
 	private readonly queue = new OcrQueue(idleScheduler(window));
 	private readonly cache: OcrCache;
 	private service: OcrService | null = null;
 	private missingAssetsWarned = false;
 	private sweeping = false;
+	/**
+	 * False until the cache is loaded. Before that every lookup misses, and
+	 * `consider` would queue a recognition for text the cache already holds.
+	 */
+	private loaded = false;
 
 	constructor(
 		private readonly app: App,
@@ -76,6 +85,7 @@ export class OcrPipeline implements OcrController {
 
 	async init(plugin: Plugin): Promise<void> {
 		await this.cache.load();
+		this.loaded = true;
 		plugin.registerEvent(
 			this.app.vault.on("delete", (file) => {
 				this.cache.remove(file.path);
@@ -150,8 +160,33 @@ export class OcrPipeline implements OcrController {
 		}
 	}
 
+	/**
+	 * What the cache already knows about this attachment under the current
+	 * settings — the indexer writes it straight into the attachment doc, so
+	 * re-indexing a file never drops its recognized text. Synchronous on
+	 * purpose: it is a map lookup, and the indexer calls it per file.
+	 */
+	cachedText(file: TFile): string | null {
+		const settings = this.getSettings();
+		const kind = kindForExtension(file.extension);
+		let text: string | null = null;
+		if (kind === "image") {
+			if (!settings.ocrEnabled) return null;
+			text = this.cache.get(
+				file.path,
+				file.stat.mtime,
+				file.stat.size,
+				settings.ocrLanguages.join("+"),
+			);
+		} else if (isPdf(file) && settings.indexPdfText) {
+			text = this.cache.get(file.path, file.stat.mtime, file.stat.size, "pdf");
+		}
+		return text === null ? null : text.slice(0, MAX_EXTRACTED_CHARS);
+	}
+
 	/** Called by the indexer for every attachment it (re)indexes. */
 	consider(file: TFile, priority: "high" | "low"): void {
+		if (!this.loaded) return;
 		const settings = this.getSettings();
 		const kind = kindForExtension(file.extension);
 		if (kind === "image") {
@@ -161,7 +196,7 @@ export class OcrPipeline implements OcrController {
 			this.considerImage(file, settings.ocrLanguages.join("+"), priority);
 			return;
 		}
-		if (kind === "file" && file.extension.toLowerCase() === "pdf" && settings.indexPdfText) {
+		if (isPdf(file) && settings.indexPdfText) {
 			this.considerPdf(file, priority);
 		}
 	}

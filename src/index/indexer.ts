@@ -22,6 +22,15 @@ export interface IndexSettings {
  */
 export interface IndexHost {
 	getSettings(): IndexSettings;
+	/**
+	 * Text already extracted from an attachment (OCR / PDF text layer), read
+	 * synchronously from the extraction cache; null when there is none or
+	 * extraction is switched off. Declared as a property, not a method, so
+	 * pulling it off the host is not an unbound-method read.
+	 */
+	extractedTextFor?: (file: TFile) => string | null;
+	/** Called after an attachment was (re)indexed — lets OCR pick it up. */
+	onAttachmentIndexed?: (file: TFile) => void;
 }
 
 /**
@@ -292,7 +301,9 @@ export class Indexer {
 		const file = this.app.vault.getFileByPath(path);
 		if (!file) return;
 		try {
-			const docs = await extractDocs(this.app, file);
+			const isNote = file.extension === "md";
+			const extracted = isNote ? null : (this.host.extractedTextFor?.(file) ?? null);
+			const docs = await extractDocs(this.app, file, extracted ?? "");
 			const newLinkIds = new Set(
 				docs.filter((doc) => doc.kind === "link").map((doc) => doc.id),
 			);
@@ -305,6 +316,7 @@ export class Indexer {
 			}
 			this.linkDocs.set(file.path, [...newLinkIds]);
 			this.indexedFiles.set(file.path, file.stat.mtime);
+			if (!isNote) this.host.onAttachmentIndexed?.(file);
 		} catch (error) {
 			console.error(`Barosaurus: failed to index ${path}`, error);
 		}
