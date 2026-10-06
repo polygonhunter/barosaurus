@@ -1,4 +1,4 @@
-import { normalizePath } from "obsidian";
+import { normalizePath, TFolder, type App } from "obsidian";
 import type { Candidate, OmniItem } from "../core/types";
 import { candidatesFromOrdered, type Source, type SourceContext } from "./source";
 
@@ -16,8 +16,48 @@ import { candidatesFromOrdered, type Source, type SourceContext } from "./source
  * the note you were actually looking for.
  */
 
-/** Characters Obsidian refuses in a file name. */
+/** Characters Obsidian refuses in a file name, or that break links to it. */
 const ILLEGAL_CHARS = /[\\/:*?"<>|#^[\]]/g;
+/** The same set, unflagged — a /g regex keeps lastIndex between test() calls. */
+const ILLEGAL_CHAR = /[\\/:*?"<>|#^[\]]/;
+
+/**
+ * Why a typed file name cannot be used, or null when it can. Used by the
+ * rename action: there the name is the user's explicit choice, so it is
+ * refused with a reason instead of being silently rewritten.
+ */
+export function invalidNameReason(name: string): string | null {
+	const found = ILLEGAL_CHAR.exec(name);
+	if (found !== null) return `a file name cannot contain “${found[0]}”`;
+	if (name.startsWith(".")) return "a file name cannot start with a dot";
+	if (/[. ]$/.test(name)) return "a file name cannot end with a dot or a space";
+	return null;
+}
+
+/**
+ * The real folder a `p:` prefix means, or null when there is none.
+ *
+ * `p:` filters by path PREFIX, so "p:proj" matches "Projects/…". Creating
+ * into the typed prefix verbatim made a brand-new folder called "proj" next
+ * to the one the user was clearly aiming at. Exact match first, then
+ * case-insensitive, then the shortest folder the prefix starts.
+ */
+export function resolvePrefixFolder(app: App, prefix: string): string | null {
+	const wanted = prefix.replace(/^\/+|\/+$/g, "");
+	if (wanted.length === 0) return null;
+	const folders: string[] = [];
+	for (const entry of app.vault.getAllLoadedFiles()) {
+		if (entry instanceof TFolder && !entry.isRoot()) folders.push(entry.path);
+	}
+	if (folders.includes(wanted)) return wanted;
+	const lower = wanted.toLowerCase();
+	const caseless = folders.find((path) => path.toLowerCase() === lower);
+	if (caseless !== undefined) return caseless;
+	const prefixed = folders
+		.filter((path) => path.toLowerCase().startsWith(lower))
+		.sort((a, b) => a.length - b.length || a.localeCompare(b));
+	return prefixed[0] ?? null;
+}
 
 /**
  * Turn typed text into a note path. Exported so the executor creates exactly
@@ -52,7 +92,9 @@ export const createSource: Source = {
 		const { query, limit } = ctx;
 		if (limit <= 0) return [];
 		const text = query.text.trim();
-		const path = createNotePath(text, query.pathPrefix);
+		const folder =
+			query.pathPrefix === null ? null : resolvePrefixFolder(ctx.app, query.pathPrefix);
+		const path = createNotePath(text, folder);
 		if (path === ".md" || path.length === 0) return [];
 
 		const item: OmniItem = {

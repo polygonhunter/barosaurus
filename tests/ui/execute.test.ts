@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { TFile, type App } from "obsidian";
+import { TFile, TFolder, type App } from "obsidian";
 import { parseQuery } from "../../src/core/query";
 import { EMPTY_CONTEXT, type OmniItem } from "../../src/core/types";
+import { invalidNameReason, resolvePrefixFolder } from "../../src/sources/create";
 import { ghostSource, isAttachmentLinktext } from "../../src/sources/ghost";
 import { choose, runAction, subpathOf } from "../../src/ui/execute";
 
@@ -141,5 +142,38 @@ describe("links to headings and blocks keep their subpath", () => {
 		expect(
 			subpathOf({ kind: "file", path: "a.md", title: "a" } as unknown as OmniItem),
 		).toBeUndefined();
+	});
+});
+
+describe("names and folders typed into the bar", () => {
+	it("refuses rename targets Obsidian cannot use, with a reason", () => {
+		expect(invalidNameReason("Plan: Q3")).toContain("“:”");
+		expect(invalidNameReason("a/b")).toContain("“/”");
+		expect(invalidNameReason(".hidden")).toContain("dot");
+		expect(invalidNameReason("Draft.")).toContain("end with");
+		expect(invalidNameReason("Draft ")).toContain("end with");
+		expect(invalidNameReason("Release 1.2")).toBeNull();
+		// Twice in a row: a /g regex would answer differently the second time.
+		expect(invalidNameReason("x#y")).not.toBeNull();
+		expect(invalidNameReason("x#y")).not.toBeNull();
+	});
+
+	it("resolves a p: prefix to the folder it actually means", () => {
+		const folder = (path: string) => Object.assign(new TFolder(), { path });
+		const app = {
+			vault: {
+				getAllLoadedFiles: () => [
+					folder("/"),
+					folder("Projects"),
+					folder("Projects/Archive"),
+					folder("Personal"),
+				],
+			},
+		} as unknown as App;
+		expect(resolvePrefixFolder(app, "Personal")).toBe("Personal");
+		expect(resolvePrefixFolder(app, "projects")).toBe("Projects");
+		expect(resolvePrefixFolder(app, "proj")).toBe("Projects");
+		expect(resolvePrefixFolder(app, "projects/arch")).toBe("Projects/Archive");
+		expect(resolvePrefixFolder(app, "nowhere")).toBeNull();
 	});
 });

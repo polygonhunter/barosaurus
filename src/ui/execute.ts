@@ -19,7 +19,7 @@ import {
 } from "../core/catalog";
 import { handlesEditing, planEdit, type EditingSettings } from "../core/editing";
 import type { OmniItem } from "../core/types";
-import { createNotePath } from "../sources/create";
+import { createNotePath, invalidNameReason } from "../sources/create";
 import { GOTO_LINE_PREFIX } from "../sources/line";
 import { SETTINGS_ACTION_PREFIX } from "../sources/settings-tabs";
 import { activeEditor } from "../services/context-service";
@@ -364,6 +364,11 @@ async function renameTo(app: App, item: OmniItem, rawName: string): Promise<void
 	}
 	const name = rawName.trim();
 	if (name.length === 0) return;
+	const invalid = invalidNameReason(name);
+	if (invalid !== null) {
+		new Notice(`Barosaurus: ${invalid}`);
+		return;
+	}
 	// A typed name keeps the old extension unless the user gave one, so
 	// renaming "notes.md" to "ideas" does not produce an extensionless file.
 	const extension = file instanceof TFile ? file.extension : "";
