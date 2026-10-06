@@ -73,7 +73,13 @@ export async function extractDocs(
 	doc.body = body;
 
 	const docs: IndexedDoc[] = [doc];
-	for (const link of extractExternalLinks(body).slice(0, MAX_LINKS_PER_NOTE)) {
+	const codeRanges: Array<[number, number]> = [];
+	for (const section of cache?.sections ?? []) {
+		if (section.type === "code") {
+			codeRanges.push([section.position.start.offset, section.position.end.offset]);
+		}
+	}
+	for (const link of extractExternalLinks(body, codeRanges).slice(0, MAX_LINKS_PER_NOTE)) {
 		docs.push({
 			...emptyDoc(file),
 			id: `${file.path}::L${link.offset}`,
@@ -103,14 +109,44 @@ export interface ExtractedLink {
 	line: number;
 }
 
-/** `[text](https://…)` — group 1 is the image `!`, kept to skip embeds. */
-const MD_LINK_RE = /(!?)\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
+/**
+ * `[text](https://…)` — group 1 is the image `!`, kept to skip embeds. The URL
+ * may hold ONE level of balanced parentheses, which is how every Wikipedia
+ * disambiguation link looks: `…/wiki/Mercury_(planet)`.
+ */
+const MD_LINK_RE = /(!?)\[([^\]]*)\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)\)/g;
 /** `<https://…>` autolinks. */
 const AUTOLINK_RE = /<(https?:\/\/[^>\s]+)>/g;
-/** Bare URLs; trailing punctuation is trimmed afterwards. */
-const BARE_URL_RE = /https?:\/\/[^\s<>"'\])}]+/g;
+/** Bare URLs, again with one balanced level; trailing punctuation is trimmed. */
+const BARE_URL_RE = /https?:\/\/(?:[^\s<>"'\])}(]|\([^\s<>"'()]*\))+/g;
+/** Inline code spans — `like this` — whose content is not a link. */
+const INLINE_CODE_RE = /`[^`\n]+`/g;
 
-export function extractExternalLinks(markdown: string): ExtractedLink[] {
+/**
+ * Blank out code so a URL inside a fence or an inline span is not a link doc.
+ * Same length, newlines kept: offsets and line numbers stay those of the note.
+ * `codeRanges` are [start, end) offsets of code blocks — from the metadata
+ * cache's sections in production, since parsing fences here would duplicate
+ * Obsidian's own parser.
+ */
+export function maskCode(
+	markdown: string,
+	codeRanges: ReadonlyArray<readonly [number, number]> = [],
+): string {
+	const blank = (text: string): string => text.replace(/[^\n]/g, " ");
+	let out = markdown;
+	for (const [start, end] of codeRanges) {
+		if (start < 0 || end <= start || end > out.length) continue;
+		out = out.slice(0, start) + blank(out.slice(start, end)) + out.slice(end);
+	}
+	return out.replace(INLINE_CODE_RE, blank);
+}
+
+export function extractExternalLinks(
+	source: string,
+	codeRanges: ReadonlyArray<readonly [number, number]> = [],
+): ExtractedLink[] {
+	const markdown = maskCode(source, codeRanges);
 	const links: ExtractedLink[] = [];
 	/** [start, end) ranges already consumed by a structured link form. */
 	const taken: Array<[number, number]> = [];
