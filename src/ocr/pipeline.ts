@@ -1,4 +1,4 @@
-import { Notice, Platform, loadPdfJs, type App, type Plugin, type TFile } from "obsidian";
+import { debounce, Notice, Platform, loadPdfJs, type App, type Plugin, type TFile } from "obsidian";
 import type { SearchEngine } from "../core/engine";
 import { extractedTextKey, kindForExtension } from "../core/index-types";
 import { idleScheduler, OcrQueue } from "../core/ocr-queue";
@@ -16,6 +16,13 @@ const MAX_EXTRACTED_CHARS = 20_000;
 const MAX_PDF_PAGES = 100;
 /** Files considered per sweep chunk before yielding, as in the indexer. */
 const SWEEP_CHUNK_SIZE = 20;
+/**
+ * ocr-cache.json holds the text of EVERY recognized file and is rewritten as
+ * a whole. Written after a quiet spell, and at least every this many jobs so a
+ * long sweep that is interrupted still keeps most of its work.
+ */
+const CACHE_SAVE_QUIET_MS = 5_000;
+const CACHE_SAVE_EVERY_JOBS = 50;
 
 /**
  * What the settings tab needs from the pipeline: switch extraction on (which
@@ -80,6 +87,10 @@ export class OcrPipeline implements OcrController {
 	private stopped = false;
 	/** Bumped by every disable(); in-flight work of an older one bails out. */
 	private generation = 0;
+	/** Finished jobs since the cache file was last written. */
+	private jobsSinceSave = 0;
+	/** In flight, so concurrent callers share one load. */
+	private loading: Promise<void> | null = null;
 
 	constructor(
 		private readonly app: App,
@@ -116,21 +127,51 @@ export class OcrPipeline implements OcrController {
 	}
 
 	async init(plugin: Plugin): Promise<void> {
-		await this.cache.load();
-		if (this.stopped) return;
-		this.loaded = true;
 		plugin.registerEvent(
 			this.app.vault.on("delete", (file) => {
-				this.cache.remove(file.path);
+				if (this.loaded) this.cache.remove(file.path);
 				this.queue.drop(file.path);
 			}),
 		);
 		plugin.registerEvent(
 			this.app.vault.on("rename", (file, oldPath) => {
-				this.cache.rename(oldPath, file.path);
+				if (this.loaded) this.cache.rename(oldPath, file.path);
 				this.queue.drop(oldPath);
 			}),
 		);
+		// Going to the background is the last reliable moment on mobile.
+		plugin.registerDomEvent(activeDocument, "visibilitychange", () => {
+			if (activeDocument.visibilityState === "hidden") void this.flushCache();
+		});
+		// With both switches off nothing reads the cache, so it is not parsed
+		// at startup at all — enable() loads it on first use.
+		const settings = this.getSettings();
+		if (settings.ocrEnabled || settings.indexPdfText) await this.ensureLoaded();
+	}
+
+	/** Load the cache once; every later call is free. */
+	private async ensureLoaded(): Promise<void> {
+		if (this.loaded || this.stopped) return;
+		this.loading ??= this.cache.load().then(() => {
+			if (!this.stopped) this.loaded = true;
+		});
+		await this.loading;
+	}
+
+	/** Debounced cache write — see CACHE_SAVE_QUIET_MS. */
+	private readonly saveCacheSoon = debounce(() => void this.flushCache(), CACHE_SAVE_QUIET_MS, true);
+
+	private async flushCache(): Promise<void> {
+		this.saveCacheSoon.cancel();
+		this.jobsSinceSave = 0;
+		await this.cache.save();
+	}
+
+	/** One job stored a result: write soon, or now if many piled up. */
+	private resultStored(): void {
+		this.jobsSinceSave += 1;
+		if (this.jobsSinceSave >= CACHE_SAVE_EVERY_JOBS) void this.flushCache();
+		else this.saveCacheSoon();
 	}
 
 	// ------------------------------------------------------------ switching on
@@ -142,6 +183,7 @@ export class OcrPipeline implements OcrController {
 	 */
 	async enable(): Promise<boolean> {
 		if (this.stopped) return false;
+		await this.ensureLoaded();
 		const settings = this.getSettings();
 		const wantsOcr = settings.ocrEnabled && Platform.isDesktop;
 		if (wantsOcr && !(await ensureAssets(this.app, this.manifestDir))) return false;
@@ -161,7 +203,7 @@ export class OcrPipeline implements OcrController {
 		const service = this.service;
 		this.service = null;
 		await service?.terminate();
-		await this.cache.save();
+		await this.flushCache();
 	}
 
 	/** Plugin unload. */
@@ -183,8 +225,9 @@ export class OcrPipeline implements OcrController {
 		const generation = this.generation;
 		try {
 			const excluded = this.getSettings().excludedFolders;
+			const files = this.app.vault.getFiles();
 			let sinceYield = 0;
-			for (const file of this.app.vault.getFiles()) {
+			for (const file of files) {
 				if (isPathExcluded(file.path, excluded)) continue;
 				this.consider(file, priority);
 				if (++sinceYield >= SWEEP_CHUNK_SIZE) {
@@ -196,6 +239,13 @@ export class OcrPipeline implements OcrController {
 					await new Promise((resolve) => window.setTimeout(resolve, 0));
 					if (this.isStale(generation)) return;
 				}
+			}
+			// Entries for files that no longer exist anywhere in the vault —
+			// deleted while Barosaurus was not running, or on another device.
+			// Excluded files are kept: un-excluding a folder must not cost a
+			// second recognition of everything in it.
+			if (this.loaded && this.cache.prune(new Set(files.map((file) => file.path)))) {
+				this.saveCacheSoon();
 			}
 		} finally {
 			this.sweeping = false;
@@ -257,7 +307,7 @@ export class OcrPipeline implements OcrController {
 				const service = await this.getService(generation);
 				if (!service) return;
 				const url = this.app.vault.getResourcePath(file);
-				const text = await service.recognize(url, langs);
+				const text = (await service.recognize(url, langs)).slice(0, MAX_EXTRACTED_CHARS);
 				if (this.isStale(generation)) return;
 				this.cache.set(file.path, {
 					mtime: file.stat.mtime,
@@ -266,7 +316,7 @@ export class OcrPipeline implements OcrController {
 					text,
 				});
 				this.apply(file, text);
-				await this.cache.save();
+				this.resultStored();
 			},
 			priority,
 		);
@@ -284,7 +334,9 @@ export class OcrPipeline implements OcrController {
 			file.path,
 			async () => {
 				if (this.isStale(generation)) return;
-				const text = await this.extractPdfText(file);
+				// Capped BEFORE caching: only this much is ever indexed, and the
+				// cache file is synced and rewritten whole.
+				const text = (await this.extractPdfText(file)).slice(0, MAX_EXTRACTED_CHARS);
 				if (this.isStale(generation)) return;
 				this.cache.set(file.path, {
 					mtime: file.stat.mtime,
@@ -293,7 +345,7 @@ export class OcrPipeline implements OcrController {
 					text,
 				});
 				this.apply(file, text);
-				await this.cache.save();
+				this.resultStored();
 			},
 			priority,
 		);

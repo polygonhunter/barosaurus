@@ -68,6 +68,21 @@ export class OcrCache {
 		this.dirty = true;
 	}
 
+	/**
+	 * Drop every entry whose path is not in `keep`. Returns whether anything
+	 * was removed, so the caller only writes when it has to.
+	 */
+	prune(keep: ReadonlySet<string>): boolean {
+		let removed = false;
+		for (const path of Object.keys(this.entries)) {
+			if (keep.has(path)) continue;
+			delete this.entries[path];
+			removed = true;
+		}
+		if (removed) this.dirty = true;
+		return removed;
+	}
+
 	async save(): Promise<void> {
 		if (!this.dirty) return;
 		this.dirty = false;

@@ -62,8 +62,9 @@ function pdfFile(path: string): TFile {
 	return file;
 }
 
-function harness(settings: Partial<BarosaurusSettings>) {
+function harness(settings: Partial<BarosaurusSettings>, stored: string | null = null) {
 	const writes: string[] = [];
+	const reads: string[] = [];
 	const files = [pdfFile("docs/contract.pdf")];
 	const app = {
 		vault: {
@@ -71,8 +72,11 @@ function harness(settings: Partial<BarosaurusSettings>) {
 			getFiles: () => files,
 			readBinary: () => Promise.resolve(new ArrayBuffer(8)),
 			adapter: {
-				exists: () => Promise.resolve(false),
-				read: () => Promise.resolve("{}"),
+				exists: () => Promise.resolve(stored !== null),
+				read: (path: string) => {
+					reads.push(path);
+					return Promise.resolve(stored ?? "{}");
+				},
 				write: (_path: string, data: string) => {
 					writes.push(data);
 					return Promise.resolve();
@@ -83,8 +87,11 @@ function harness(settings: Partial<BarosaurusSettings>) {
 	const engine = new SearchEngine(DEFAULT_WEIGHTS);
 	const current: BarosaurusSettings = { ...DEFAULT_SETTINGS, ...settings };
 	const pipeline = new OcrPipeline(app, engine, () => current, "plugins/barosaurus", () => undefined);
-	const plugin = { registerEvent: () => undefined } as unknown as Plugin;
-	return { pipeline, engine, writes, file: files[0] as TFile, plugin };
+	const plugin = {
+		registerEvent: () => undefined,
+		registerDomEvent: () => undefined,
+	} as unknown as Plugin;
+	return { pipeline, engine, writes, reads, file: files[0] as TFile, plugin };
 }
 
 /** Let idle-scheduled jobs (setTimeout 200 in jsdom) and microtasks run. */
@@ -133,6 +140,40 @@ describe("OcrPipeline lifecycle", () => {
 		// The document and every page are released again.
 		expect(pdf.destroyed).toBe(1);
 		expect(pdf.pagesCleaned).toBe(1);
+		await pipeline.destroy();
+	});
+});
+
+describe("the extraction cache file", () => {
+	const stored = JSON.stringify({
+		version: 1,
+		entries: {
+			"docs/contract.pdf": { mtime: 1, size: 100, langs: "pdf", text: "contract terms" },
+			"docs/deleted.pdf": { mtime: 1, size: 100, langs: "pdf", text: "gone for good" },
+		},
+	});
+
+	it("is not even read while both switches are off", async () => {
+		const { pipeline, reads, plugin } = harness({}, stored);
+		await pipeline.init(plugin);
+		expect(reads).toEqual([]);
+		await pipeline.destroy();
+	});
+
+	it("loads on enable, serves cached text, and prunes files that are gone", async () => {
+		const { pipeline, engine, writes, file, plugin } = harness({}, stored);
+		await pipeline.init(plugin);
+		expect(pipeline.cachedText(file)).toBeNull();
+
+		const current = { ...DEFAULT_SETTINGS, indexPdfText: true };
+		(pipeline as unknown as { getSettings: () => BarosaurusSettings }).getSettings = () => current;
+		expect(await pipeline.enable()).toBe(true);
+
+		expect(pipeline.cachedText(file)).toBe("contract terms");
+		expect(engine.search("contract").map((hit) => hit.id)).toEqual([file.path]);
+		// The harness debounce is synchronous, so the pruned file is written at once.
+		const last = JSON.parse(writes[writes.length - 1] ?? "{}") as { entries: object };
+		expect(Object.keys(last.entries)).toEqual(["docs/contract.pdf"]);
 		await pipeline.destroy();
 	});
 });
