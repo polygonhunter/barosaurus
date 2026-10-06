@@ -251,7 +251,12 @@ export class PreviewPane {
 		const body = await this.app.vault.cachedRead(file);
 		// Bail before spending a render on an answer nobody is waiting for.
 		if (token !== this.token) return null;
-		const excerpt = excerptAround(stripFrontmatter(body), queryWords, line);
+		// The line came from the whole file; the excerpt sees the body without
+		// its frontmatter, so shift it by the lines that were cut — or a
+		// heading result previewed the text N lines below the heading.
+		const { body: content, lines: cut } = stripFrontmatter(body);
+		const bodyLine = line === undefined || line < cut ? undefined : line - cut;
+		const excerpt = excerptAround(content, queryWords, bodyLine);
 		const contentEl = el.createDiv({ cls: "barosaurus-preview-note markdown-rendered" });
 		const owner = new Component();
 		owner.load();
@@ -326,8 +331,16 @@ export class PreviewPane {
 
 // ------------------------------------------------------------------ excerpt
 
-function stripFrontmatter(body: string): string {
-	return body.replace(/^---\n[\s\S]*?\n---\n?/, "");
+/** Leading YAML block, LF or CRLF — notes synced from Windows carry CRLF. */
+const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
+
+/** The note without its frontmatter, and how many lines that removed. */
+export function stripFrontmatter(text: string): { body: string; lines: number } {
+	const match = FRONTMATTER_RE.exec(text);
+	if (match === null) return { body: text, lines: 0 };
+	let lines = 0;
+	for (const ch of match[0]) if (ch === "\n") lines += 1;
+	return { body: text.slice(match[0].length), lines };
 }
 
 /**
