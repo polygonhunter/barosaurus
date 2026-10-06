@@ -63,6 +63,10 @@ export class OcrPipeline implements OcrController {
 	 * `consider` would queue a recognition for text the cache already holds.
 	 */
 	private loaded = false;
+	/** Set for good on unload; nothing may start or continue after it. */
+	private stopped = false;
+	/** Bumped by every disable(); in-flight work of an older one bails out. */
+	private generation = 0;
 
 	constructor(
 		private readonly app: App,
@@ -74,17 +78,33 @@ export class OcrPipeline implements OcrController {
 		this.cache = new OcrCache(app, manifestDir);
 	}
 
-	/** Instantiate tesseract on first use only (desktop recognition path). */
-	private async getService(): Promise<OcrService> {
+	/**
+	 * Instantiate tesseract on first use only (desktop recognition path).
+	 * Returns null once the run that asked has been stopped — a worker created
+	 * after disable()/destroy() would never be terminated by anyone.
+	 */
+	private async getService(generation: number): Promise<OcrService | null> {
+		if (this.isStale(generation)) return null;
 		if (!this.service) {
 			const { OcrService: Service } = await import("./ocr-service");
-			this.service = new Service(this.app, this.manifestDir);
+			if (this.isStale(generation)) return null;
+			this.service ??= new Service(this.app, this.manifestDir);
 		}
 		return this.service;
 	}
 
+	/**
+	 * True when the work started under `generation` must not continue: the
+	 * plugin unloaded, or extraction was switched off (and maybe on again —
+	 * which is why a plain boolean is not enough).
+	 */
+	private isStale(generation: number): boolean {
+		return this.stopped || generation !== this.generation;
+	}
+
 	async init(plugin: Plugin): Promise<void> {
 		await this.cache.load();
+		if (this.stopped) return;
 		this.loaded = true;
 		plugin.registerEvent(
 			this.app.vault.on("delete", (file) => {
@@ -108,6 +128,7 @@ export class OcrPipeline implements OcrController {
 	 * only network request this plugin ever makes — then sweeps the vault.
 	 */
 	async enable(): Promise<boolean> {
+		if (this.stopped) return false;
 		const settings = this.getSettings();
 		const wantsOcr = settings.ocrEnabled && Platform.isDesktop;
 		if (wantsOcr && !(await ensureAssets(this.app, this.manifestDir))) return false;
@@ -119,14 +140,20 @@ export class OcrPipeline implements OcrController {
 
 	/** Stop extraction and release the worker; re-enabling picks up again. */
 	async disable(): Promise<void> {
+		this.generation += 1;
+		// Pause BEFORE clearing: clear() only empties the lists, and the job
+		// that finishes next would otherwise pump whatever arrives meanwhile.
+		this.queue.pause();
 		this.queue.clear();
-		await this.service?.terminate();
+		const service = this.service;
 		this.service = null;
+		await service?.terminate();
 		await this.cache.save();
 	}
 
 	/** Plugin unload. */
 	async destroy(): Promise<void> {
+		this.stopped = true;
 		await this.disable();
 	}
 
@@ -138,8 +165,9 @@ export class OcrPipeline implements OcrController {
 	 * Obsidian while the sweep walks it.
 	 */
 	async scanVault(priority: "high" | "low" = "low"): Promise<void> {
-		if (this.sweeping) return;
+		if (this.sweeping || this.stopped) return;
 		this.sweeping = true;
+		const generation = this.generation;
 		try {
 			const excluded = this.getSettings().excludedFolders;
 			let sinceYield = 0;
@@ -153,6 +181,7 @@ export class OcrPipeline implements OcrController {
 					// `activeWindow` on purpose — this loop must survive a popout
 					// being closed mid-sweep.
 					await new Promise((resolve) => window.setTimeout(resolve, 0));
+					if (this.isStale(generation)) return;
 				}
 			}
 		} finally {
@@ -186,7 +215,7 @@ export class OcrPipeline implements OcrController {
 
 	/** Called by the indexer for every attachment it (re)indexes. */
 	consider(file: TFile, priority: "high" | "low"): void {
-		if (!this.loaded) return;
+		if (!this.loaded || this.stopped) return;
 		const settings = this.getSettings();
 		const kind = kindForExtension(file.extension);
 		if (kind === "image") {
@@ -207,13 +236,16 @@ export class OcrPipeline implements OcrController {
 			this.apply(file, cached);
 			return;
 		}
+		const generation = this.generation;
 		this.queue.push(
 			file.path,
 			async () => {
 				if (!(await this.assetsReady())) return;
+				const service = await this.getService(generation);
+				if (!service) return;
 				const url = this.app.vault.getResourcePath(file);
-				const service = await this.getService();
 				const text = await service.recognize(url, langs);
+				if (this.isStale(generation)) return;
 				this.cache.set(file.path, {
 					mtime: file.stat.mtime,
 					size: file.stat.size,
@@ -234,10 +266,13 @@ export class OcrPipeline implements OcrController {
 			this.apply(file, cached);
 			return;
 		}
+		const generation = this.generation;
 		this.queue.push(
 			file.path,
 			async () => {
+				if (this.isStale(generation)) return;
 				const text = await this.extractPdfText(file);
+				if (this.isStale(generation)) return;
 				this.cache.set(file.path, {
 					mtime: file.stat.mtime,
 					size: file.stat.size,
