@@ -252,6 +252,33 @@ export class PluginSettingTab {
 	) {}
 	display(): void {}
 }
+export class ButtonComponent {
+	readonly buttonEl: HTMLButtonElement;
+	constructor(containerEl: HTMLElement) {
+		this.buttonEl = containerEl.ownerDocument.createElement("button");
+		containerEl.appendChild(this.buttonEl);
+	}
+	setButtonText(text: string): this {
+		this.buttonEl.textContent = text;
+		return this;
+	}
+	setWarning(): this {
+		this.buttonEl.classList.add("mod-warning");
+		return this;
+	}
+	setCta(): this {
+		return this;
+	}
+	setDisabled(disabled: boolean): this {
+		this.buttonEl.disabled = disabled;
+		return this;
+	}
+	onClick(handler: () => unknown): this {
+		this.buttonEl.addEventListener("click", () => void handler());
+		return this;
+	}
+}
+
 export class Setting {
 	constructor(readonly containerEl: HTMLElement) {}
 	setName(): this {
@@ -263,7 +290,12 @@ export class Setting {
 	setHeading(): this {
 		return this;
 	}
-	addButton(): this {
+	/**
+	 * Builds a real <button> and hands it to the callback, because dialogs
+	 * (the delete confirmation) are driven through their buttons in tests.
+	 */
+	addButton(cb?: (button: ButtonComponent) => unknown): this {
+		cb?.(new ButtonComponent(this.containerEl));
 		return this;
 	}
 	addToggle(): this {

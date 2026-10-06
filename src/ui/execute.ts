@@ -252,8 +252,8 @@ export async function runAction(
 				await removeProperty(app, item, args[0] ?? "");
 				return "close";
 			case "delete":
-				await confirmAndTrash(app, item);
-				return "close";
+				// Cancelled → back to the bar where the user was, not out of it.
+				return (await confirmAndTrash(app, item)) ? "close" : "stay";
 			case "bookmark":
 				await bookmark(host, item);
 				return "close";
@@ -507,11 +507,11 @@ function fileFor(app: App, item: OmniItem): TFile | null {
  * `FileManager.trashFile` (@since 1.6.6), not `vault.trash`: it respects
  * whether the user asked for the system bin or the vault's .trash folder.
  */
-async function confirmAndTrash(app: App, item: OmniItem): Promise<void> {
+async function confirmAndTrash(app: App, item: OmniItem): Promise<boolean> {
 	const file = abstractFileOf(app, item);
 	if (file === null) {
 		new Notice("Barosaurus: that file is gone");
-		return;
+		return true;
 	}
 	const isFolder = file instanceof TFolder;
 	const confirmed = await confirm(app, {
@@ -521,9 +521,10 @@ async function confirmAndTrash(app: App, item: OmniItem): Promise<void> {
 			: `“${file.name}” will be moved to the trash.`,
 		confirmText: "Delete",
 	});
-	if (!confirmed) return;
+	if (!confirmed) return false;
 	await app.fileManager.trashFile(file);
 	new Notice(`Deleted “${file.name}”`);
+	return true;
 }
 
 // ------------------------------------------------------------ core plugins
@@ -830,16 +831,27 @@ class ConfirmModal extends Modal {
 		this.titleEl.setText(this.spec.title);
 		this.contentEl.addClass("barosaurus-confirm");
 		this.contentEl.createEl("p", { text: this.spec.body });
+		let confirmEl: HTMLElement | null = null;
 		new Setting(this.contentEl)
 			.addButton((button) =>
 				button.setButtonText("Cancel").onClick(() => this.finish(false)),
 			)
-			.addButton((button) =>
+			.addButton((button) => {
 				button
 					.setButtonText(this.spec.confirmText)
 					.setWarning()
-					.onClick(() => this.finish(true)),
-			);
+					.onClick(() => this.finish(true));
+				confirmEl = button.buttonEl;
+			});
+		// The bar is driven from the keyboard, so the dialog it opens must be
+		// too: Enter confirms, Esc cancels (Modal's own), and the focus ring
+		// sits on the button Enter will press — never on one it will not.
+		this.scope.register([], "Enter", (event) => {
+			event.preventDefault();
+			this.finish(true);
+			return false;
+		});
+		(confirmEl as HTMLElement | null)?.focus();
 	}
 
 	private finish(ok: boolean): void {

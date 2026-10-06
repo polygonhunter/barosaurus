@@ -177,3 +177,58 @@ describe("names and folders typed into the bar", () => {
 		expect(resolvePrefixFolder(app, "nowhere")).toBeNull();
 	});
 });
+
+describe("the delete confirmation", () => {
+	function deleteApp() {
+		const trashed: string[] = [];
+		const file = new TFile();
+		file.path = "Inbox/Old.md";
+		file.name = "Old.md";
+		const app = {
+			vault: { getAbstractFileByPath: (path: string) => (path === file.path ? file : null) },
+			fileManager: {
+				trashFile: (target: TFile) => {
+					trashed.push(target.path);
+					return Promise.resolve();
+				},
+			},
+		} as unknown as App;
+		const item = {
+			kind: "file",
+			source: "file",
+			group: "files",
+			id: "file:Inbox/Old.md",
+			title: "Old",
+			aliases: [],
+			tile: { kind: "icon", icon: "file" },
+			path: file.path,
+			resultKind: "note",
+		} as unknown as OmniItem;
+		return { app, item, trashed };
+	}
+
+	/** The open confirmation dialog's scope, found through the DOM it built. */
+	function dialogButtons(): HTMLButtonElement[] {
+		return Array.from(document.querySelectorAll<HTMLButtonElement>(".barosaurus-confirm button"));
+	}
+
+	it("keeps the bar open when the user cancels", async () => {
+		const { app, item, trashed } = deleteApp();
+		const outcome = runAction({ app, remember: () => undefined }, "delete", item);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		dialogButtons().find((button) => button.textContent === "Cancel")?.click();
+		expect(await outcome).toBe("stay");
+		expect(trashed).toEqual([]);
+	});
+
+	it("focuses the delete button so Enter does what the ring shows", async () => {
+		const { app, item, trashed } = deleteApp();
+		const outcome = runAction({ app, remember: () => undefined }, "delete", item);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const focused = document.activeElement as HTMLButtonElement | null;
+		expect(focused?.textContent).toBe("Delete");
+		focused?.click();
+		expect(await outcome).toBe("close");
+		expect(trashed).toEqual(["Inbox/Old.md"]);
+	});
+});
