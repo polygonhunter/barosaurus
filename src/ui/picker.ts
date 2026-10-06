@@ -109,6 +109,19 @@ function ordered(entries: Array<Scorable<OmniItem>>, query: string, limit: numbe
 /** Upper bound per picker page. Generous — a picker is a short list by nature. */
 const PICKER_LIMIT = 100;
 
+/**
+ * Build once, on first use, then reuse. A page's corpus (every folder, every
+ * tag, every property key in the vault) does not change while the user types
+ * into the picker, so walking the vault again per keystroke bought nothing.
+ */
+function lazy<T>(build: () => T): () => T {
+	let value: { built: T } | null = null;
+	return () => {
+		value ??= { built: build() };
+		return value.built;
+	};
+}
+
 // ---------------------------------------------------------------- folders
 
 /**
@@ -123,12 +136,17 @@ export function folderPage(prompt: string, app: App): BarPage {
 		label: prompt,
 		placeholder: "Search folders…",
 		emptyText: "No folder matches.",
-		rows: (query) => folderRows(app, query),
+		rows: rowsFrom(lazy(() => folderEntries(app))),
 		choose: commitRow,
 	};
 }
 
-function folderRows(app: App, query: string): OmniItem[] {
+/** A page's rows: its corpus, built once, ordered by the query each time. */
+function rowsFrom(entries: () => Array<Scorable<OmniItem>>): (query: string) => OmniItem[] {
+	return (query) => ordered(entries(), query, PICKER_LIMIT);
+}
+
+function folderEntries(app: App): Array<Scorable<OmniItem>> {
 	const entries: Array<Scorable<OmniItem>> = [];
 	// The root has an empty path; show it under a name the user recognises.
 	entries.push({
@@ -143,12 +161,12 @@ function folderRows(app: App, query: string): OmniItem[] {
 			terms: [fold(entry.name), fold(entry.path)].filter((term) => term.length > 0),
 		});
 	}
-	return ordered(entries, query, PICKER_LIMIT);
+	return entries;
 }
 
 // ------------------------------------------------------------------- tags
 
-function tagRows(app: App, query: string): OmniItem[] {
+function tagEntries(app: App): Array<Scorable<OmniItem>> {
 	const entries: Array<Scorable<OmniItem>> = [];
 	for (const { tag, count } of getAllVaultTags(app)) {
 		// The stored form carries the '#'; the value handed to the action does
@@ -164,6 +182,10 @@ function tagRows(app: App, query: string): OmniItem[] {
 			terms: [fold(bare)],
 		});
 	}
+	return entries;
+}
+
+function tagRows(entries: Array<Scorable<OmniItem>>, query: string): OmniItem[] {
 	const rows = ordered(entries, query, PICKER_LIMIT);
 	// A tag that does not exist yet is a perfectly good answer to "Add tag…".
 	const typed = query.trim().replace(/^#/, "");
@@ -203,8 +225,8 @@ export function vaultPropertyKeys(app: App): Array<{ key: string; count: number 
 		.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
 }
 
-function propertyRows(app: App, query: string): OmniItem[] {
-	const entries: Array<Scorable<OmniItem>> = vaultPropertyKeys(app).map(({ key, count }) => ({
+function propertyEntries(app: App): Array<Scorable<OmniItem>> {
+	return vaultPropertyKeys(app).map(({ key, count }) => ({
 		value: valueRow(
 			key,
 			key,
@@ -213,6 +235,9 @@ function propertyRows(app: App, query: string): OmniItem[] {
 		),
 		terms: [fold(key)],
 	}));
+}
+
+function propertyRows(entries: Array<Scorable<OmniItem>>, query: string): OmniItem[] {
 	const rows = ordered(entries, query, PICKER_LIMIT);
 	// A property nobody has used yet is a perfectly good answer, same as a tag.
 	const typed = query.trim();
@@ -234,18 +259,17 @@ function propertyRows(app: App, query: string): OmniItem[] {
  */
 const TEMPLATE_FOLDERS = ["templates", "template", "vorlagen", "_templates"];
 
-function templateRows(app: App, query: string): OmniItem[] {
+function templateEntries(app: App): Array<Scorable<OmniItem>> {
 	const all = app.vault.getMarkdownFiles();
 	const inFolder = all.filter((file) => {
 		const folder = file.parent?.path.toLowerCase() ?? "";
 		return TEMPLATE_FOLDERS.some((name) => folder === name || folder.endsWith(`/${name}`));
 	});
 	const corpus = inFolder.length > 0 ? inFolder : all;
-	const entries: Array<Scorable<OmniItem>> = corpus.map((file) => ({
+	return corpus.map((file) => ({
 		value: valueRow(file.path, file.basename, { kind: "icon", icon: "file-text" }, file.path),
 		terms: [fold(file.basename), fold(file.path)],
 	}));
-	return ordered(entries, query, PICKER_LIMIT);
 }
 
 // ----------------------------------------------------------------- colour
@@ -353,15 +377,14 @@ function textRows(prompt: string, query: string): OmniItem[] {
  * kind; offering the real list instead of a text field is strictly better and
  * costs the flow nothing — a page is a page.
  */
-function commandRows(app: App, query: string): OmniItem[] {
-	const entries: Array<Scorable<OmniItem>> = listCommands(app).map((command) => ({
+function commandEntries(app: App): Array<Scorable<OmniItem>> {
+	return listCommands(app).map((command) => ({
 		value: valueRow(command.id, command.name, {
 			kind: "icon",
 			icon: command.icon ?? "terminal",
 		}),
 		terms: [fold(command.name), fold(command.id)],
 	}));
-	return ordered(entries, query, PICKER_LIMIT);
 }
 
 // ------------------------------------------------------------------ build
@@ -371,31 +394,35 @@ export function pageFor(picker: ArgumentPicker, app: App): BarPage {
 	switch (picker.kind) {
 		case "folder":
 			return folderPage(picker.prompt, app);
-		case "tag":
+		case "tag": {
+			const entries = lazy(() => tagEntries(app));
 			return {
 				kind: "tag",
 				label: picker.prompt,
 				placeholder: "Search or type a tag…",
 				emptyText: "Type a tag.",
-				rows: (query) => tagRows(app, query),
+				rows: (query) => tagRows(entries(), query),
 				choose: commitRow,
 			};
-		case "property":
+		}
+		case "property": {
+			const entries = lazy(() => propertyEntries(app));
 			return {
 				kind: "property",
 				label: picker.prompt,
 				placeholder: "Search or type a property…",
 				emptyText: "Type a property name.",
-				rows: (query) => propertyRows(app, query),
+				rows: (query) => propertyRows(entries(), query),
 				choose: commitRow,
 			};
+		}
 		case "template":
 			return {
 				kind: "template",
 				label: picker.prompt,
 				placeholder: "Search templates…",
 				emptyText: "No template matches.",
-				rows: (query) => templateRows(app, query),
+				rows: rowsFrom(lazy(() => templateEntries(app))),
 				choose: commitRow,
 			};
 		case "color":
@@ -444,7 +471,7 @@ export function commandPage(prompt: string, app: App): BarPage {
 		label: prompt,
 		placeholder: "Search commands…",
 		emptyText: "No command matches.",
-		rows: (query) => commandRows(app, query),
+		rows: rowsFrom(lazy(() => commandEntries(app))),
 		choose: commitRow,
 	};
 }

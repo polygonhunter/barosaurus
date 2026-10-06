@@ -100,6 +100,18 @@ export interface SourceContext {
 	 * applied in exactly one place.
 	 */
 	settings?: SourceSettings;
+	/**
+	 * Per-open memo: `build` runs once per key while the bar is open and its
+	 * result is reused on every later keystroke. Corpora that cannot change
+	 * while the user types — every tag, folder, command, unresolved link —
+	 * were rebuilt on each key. Optional; absent, `memoOf` simply builds.
+	 */
+	memo?: <T>(key: string, build: () => T) => T;
+}
+
+/** Build through the context's memo when it has one. */
+export function memoOf<T>(ctx: SourceContext, key: string, build: () => T): T {
+	return ctx.memo === undefined ? build() : ctx.memo(key, build);
 }
 
 /** The settings this context carries, or the documented defaults. */

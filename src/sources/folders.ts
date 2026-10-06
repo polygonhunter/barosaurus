@@ -3,7 +3,14 @@ import { fold } from "../core/normalize";
 import { containsPhrase } from "../core/query";
 import type { Candidate, OmniItem } from "../core/types";
 import { folderOf, fuzzyFactory, orderByMatch, type Scorable } from "./files";
-import { candidatesFromOrdered, excluderFor, type Source, type SourceContext } from "./source";
+import {
+	candidatesFromOrdered,
+	excluderFor,
+	memoOf,
+	sourceSettings,
+	type Source,
+	type SourceContext,
+} from "./source";
 
 /**
  * Folders, so "go to my project folder" is one query rather than a sidebar
@@ -11,6 +18,43 @@ import { candidatesFromOrdered, excluderFor, type Source, type SourceContext } f
  * this needs no traversal of its own — the `instanceof TFolder` check is the
  * documented way to tell the two apart.
  */
+/**
+ * Every folder outside the exclusions as a scorable row — built once per
+ * open of the bar, then only filtered and ordered per keystroke.
+ */
+function folderCorpus(ctx: SourceContext): Array<Scorable<OmniItem>> {
+	const excluded = sourceSettings(ctx).excludedFolders;
+	return memoOf(ctx, `folders:${excluded.join("\n")}`, () => {
+		const isExcluded = excluderFor(ctx);
+		const entries: Array<Scorable<OmniItem>> = [];
+		for (const entry of ctx.app.vault.getAllLoadedFiles()) {
+			if (!(entry instanceof TFolder)) continue;
+			// The vault root is every path's ancestor and never a useful result.
+			if (entry.path === "/" || entry.path.length === 0) continue;
+			// The excluded folder itself and everything under it — the check is
+			// boundary-aware, so "templates" leaves "templates-archive" alone.
+			if (isExcluded(entry.path)) continue;
+			const item: OmniItem = {
+				id: `folder:${entry.path}`,
+				kind: "folder",
+				source: "folder",
+				group: "folders",
+				title: entry.name,
+				aliases: [entry.path],
+				subtitle: folderOf(entry.path),
+				tile: { kind: "icon", icon: "folder" },
+				path: entry.path,
+				contextTags: ["navigation", "vault"],
+			};
+			entries.push({
+				value: item,
+				terms: [fold(entry.name), fold(entry.path)].filter((term) => term.length > 0),
+			});
+		}
+		return entries;
+	});
+}
+
 export const foldersSource: Source = {
 	id: "folder",
 
@@ -30,41 +74,16 @@ export const foldersSource: Source = {
 	},
 
 	getCandidates(ctx: SourceContext): Candidate[] {
-		const { app, query, limit } = ctx;
+		const { query, limit } = ctx;
 		if (limit <= 0) return [];
 
-		const isExcluded = excluderFor(ctx);
-		const entries: Array<Scorable<OmniItem>> = [];
-		for (const entry of app.vault.getAllLoadedFiles()) {
-			if (!(entry instanceof TFolder)) continue;
-			// The vault root is every path's ancestor and never a useful result.
-			if (entry.path === "/" || entry.path.length === 0) continue;
-			// The excluded folder itself and everything under it — the check is
-			// boundary-aware, so "templates" leaves "templates-archive" alone.
-			if (isExcluded(entry.path)) continue;
-			if (query.pathPrefix !== null) {
-				if (!entry.path.toLowerCase().startsWith(query.pathPrefix.toLowerCase())) continue;
-			}
-			if (query.phrases.some((phrase) => !containsPhrase(entry.path, phrase))) continue;
-			if (query.excludes.some((word) => containsPhrase(entry.path, word))) continue;
-
-			const item: OmniItem = {
-				id: `folder:${entry.path}`,
-				kind: "folder",
-				source: "folder",
-				group: "folders",
-				title: entry.name,
-				aliases: [entry.path],
-				subtitle: folderOf(entry.path),
-				tile: { kind: "icon", icon: "folder" },
-				path: entry.path,
-				contextTags: ["navigation", "vault"],
-			};
-			entries.push({
-				value: item,
-				terms: [fold(entry.name), fold(entry.path)].filter((term) => term.length > 0),
-			});
-		}
+		const prefix = query.pathPrefix?.toLowerCase() ?? null;
+		const entries = folderCorpus(ctx).filter(({ value }) => {
+			const path = value.kind === "folder" ? value.path : "";
+			if (prefix !== null && !path.toLowerCase().startsWith(prefix)) return false;
+			if (query.phrases.some((phrase) => !containsPhrase(path, phrase))) return false;
+			return !query.excludes.some((word) => containsPhrase(path, word));
+		});
 
 		return candidatesFromOrdered(orderByMatch(entries, fold(query.text), fuzzyFactory, limit));
 	},

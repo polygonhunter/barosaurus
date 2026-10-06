@@ -1,7 +1,14 @@
 import { fold } from "../core/normalize";
 import type { Candidate, OmniItem } from "../core/types";
 import { fuzzyFactory, orderByMatch, type Scorable } from "./files";
-import { candidatesFromOrdered, excluderFor, type Source, type SourceContext } from "./source";
+import {
+	candidatesFromOrdered,
+	excluderFor,
+	memoOf,
+	sourceSettings,
+	type Source,
+	type SourceContext,
+} from "./source";
 
 /**
  * Ghost notes: wikilinks that point at notes which do not exist yet.
@@ -56,31 +63,15 @@ export function isAttachmentLinktext(linktext: string): boolean {
 	return ATTACHMENT_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
 }
 
-export const ghostSource: Source = {
-	id: "ghost",
-
-	/**
-	 * Unscoped queries with actual text. The `l` (link) kind operator points
-	 * here on purpose — an unresolved link is the one result family that is
-	 * literally a link — while every corpus operator (path, recency, #tag)
-	 * excludes this source, because a ghost has no file to filter on.
-	 */
-	appliesTo(ctx: SourceContext): boolean {
-		return (
-			ctx.query.scope === "all" &&
-			(ctx.query.kind === null || ctx.query.kind === "link") &&
-			ctx.query.pathPrefix === null &&
-			ctx.query.modifiedWithinDays === null &&
-			ctx.query.tags.length === 0 &&
-			fold(ctx.query.text).length > 0
-		);
-	},
-
-	getCandidates(ctx: SourceContext): Candidate[] {
-		const { app, query, limit } = ctx;
-		const cap = Math.min(limit, GHOST_LIMIT);
-		if (cap <= 0) return [];
-
+/**
+ * Every unresolved link as a scorable row, aggregated across the notes that
+ * contain it. unresolvedLinks spans the whole vault, and each linktext also
+ * costs a link resolution — built once per open of the bar, not per key.
+ */
+function ghostCorpus(ctx: SourceContext): Array<Scorable<OmniItem>> {
+	const excluded = sourceSettings(ctx).excludedFolders;
+	return memoOf(ctx, `ghost:${excluded.join("\n")}`, () => {
+		const { app } = ctx;
 		// Aggregate first: the same missing note is usually linked from several
 		// places, and "linked from 4 notes" is the useful signal.
 		const isExcluded = excluderFor(ctx);
@@ -125,6 +116,35 @@ export const ghostSource: Source = {
 				terms: [folded],
 			});
 		}
+		return entries;
+	});
+}
+
+export const ghostSource: Source = {
+	id: "ghost",
+
+	/**
+	 * Unscoped queries with actual text. The `l` (link) kind operator points
+	 * here on purpose — an unresolved link is the one result family that is
+	 * literally a link — while every corpus operator (path, recency, #tag)
+	 * excludes this source, because a ghost has no file to filter on.
+	 */
+	appliesTo(ctx: SourceContext): boolean {
+		return (
+			ctx.query.scope === "all" &&
+			(ctx.query.kind === null || ctx.query.kind === "link") &&
+			ctx.query.pathPrefix === null &&
+			ctx.query.modifiedWithinDays === null &&
+			ctx.query.tags.length === 0 &&
+			fold(ctx.query.text).length > 0
+		);
+	},
+
+	getCandidates(ctx: SourceContext): Candidate[] {
+		const { query, limit } = ctx;
+		const cap = Math.min(limit, GHOST_LIMIT);
+		if (cap <= 0) return [];
+		const entries = ghostCorpus(ctx);
 
 		return candidatesFromOrdered(orderByMatch(entries, fold(query.text), fuzzyFactory, cap));
 	},

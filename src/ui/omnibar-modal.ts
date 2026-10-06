@@ -221,6 +221,17 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	 * synchronous results and returns at once.
 	 */
 	private streamed: { query: string; candidates: Candidate[] } | null = null;
+	/**
+	 * The per-open memo handed to sources (SourceContext.memo). Emptied on
+	 * open and on close, so every opening sees the vault as it is now.
+	 */
+	private readonly memoStore = new Map<string, unknown>();
+	private readonly memo = <T>(key: string, build: () => T): T => {
+		if (this.memoStore.has(key)) return this.memoStore.get(key) as T;
+		const value = build();
+		this.memoStore.set(key, value);
+		return value;
+	};
 	private busy = false;
 	private scopeLabel = "";
 
@@ -299,6 +310,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// Modal.onOpen is typed `Promise<void> | void`; `void` says we know and
 		// are deliberately not sequencing against it.
 		void super.onOpen();
+		this.memoStore.clear();
 		// Stagger the very first paint only — never on keystrokes.
 		this.modalEl.addClass("is-entering");
 		this.inputWin.setTimeout(() => this.modalEl.removeClass("is-entering"), ENTER_DURATION_MS);
@@ -323,6 +335,8 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// sources: without this it woke up after close and ranked, grouped
 		// and rendered a full result list into a modal nobody can see.
 		this.queryToken += 1;
+		this.memoStore.clear();
+		this.streamed = null;
 		super.onClose();
 	}
 
@@ -535,6 +549,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 			limit: this.options.sourceLimit ?? DEFAULT_SOURCE_LIMIT,
 			index: this.options.index?.() ?? null,
 			settings: this.options.settings?.(),
+			memo: this.memo,
 		};
 
 		// A keystroke invalidates the request in flight: a late result

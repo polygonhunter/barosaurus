@@ -13,6 +13,7 @@ import {
 import { fuzzyFactory, orderByMatch, type Scorable } from "./files";
 import {
 	candidatesFromOrdered,
+	memoOf,
 	sourceSettings,
 	type Source,
 	type SourceContext,
@@ -203,6 +204,12 @@ function hiddenIds(ids: readonly string[]): ReadonlySet<string> {
  * Enumerated commands plus the gated family entries, pre-sorted into the order
  * the empty state wants: pinned, then curated, then everything else by name.
  */
+/**
+ * One collator for every comparison. `localeCompare` without one builds a
+ * fresh collator per call — a thousand commands sort in ~10k comparisons.
+ */
+const COLLATOR = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
 function corpus(app: App, hidden: ReadonlySet<string>): CommandEntry[] {
 	const registered = listCommands(app);
 	const byId = new Map(registered.map((command) => [command.id, command]));
@@ -249,7 +256,7 @@ function corpus(app: App, hidden: ReadonlySet<string>): CommandEntry[] {
 		const curatedA = a.curated === undefined ? 1 : 0;
 		const curatedB = b.curated === undefined ? 1 : 0;
 		if (curatedA !== curatedB) return curatedA - curatedB;
-		return a.command.name.localeCompare(b.command.name);
+		return COLLATOR.compare(a.command.name, b.command.name);
 	});
 	return entries;
 }
@@ -281,13 +288,14 @@ export const commandsSource: Source = {
 		if (limit <= 0) return [];
 		const settings = sourceSettings(ctx);
 
-		const entries: Array<Scorable<CommandEntry>> = corpus(
-			app,
-			hiddenIds(settings.hiddenCommands),
-		).map((entry) => ({
-			value: entry,
-			terms: entry.terms,
-		}));
+		// The registry, the family gating and the sort do not change while the
+		// bar is open; only which entries match does. Keyed on the hidden list,
+		// because "hide" runs from inside the open bar.
+		const entries = memoOf(ctx, `commands:${settings.hiddenCommands.join("\n")}`, () =>
+			corpus(app, hiddenIds(settings.hiddenCommands)).map(
+				(entry): Scorable<CommandEntry> => ({ value: entry, terms: entry.terms }),
+			),
+		);
 
 		const foldedQuery = fold(query.text);
 		const matched = orderByMatch(entries, foldedQuery, fuzzyFactory, overscanFor(limit));

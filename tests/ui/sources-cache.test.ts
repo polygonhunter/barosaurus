@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { TFile, type App } from "obsidian";
+import { TFile, TFolder, type App } from "obsidian";
 import { parseQuery } from "../../src/core/query";
 import { EMPTY_CONTEXT } from "../../src/core/types";
 import { filesSource, invalidateTitleTerms } from "../../src/sources/files";
+import { foldersSource } from "../../src/sources/folders";
 import { headingsSource } from "../../src/sources/headings";
 
 /**
@@ -88,5 +89,35 @@ describe("heading cache across renames", () => {
 		rename(file, "New name.md");
 
 		expect(subtitle()).toBe("New name");
+	});
+});
+
+describe("per-open memo", () => {
+	it("walks the folders once per open, not once per keystroke", () => {
+		let walks = 0;
+		const folder = (path: string) =>
+			Object.assign(new TFolder(), { path, name: path.slice(path.lastIndexOf("/") + 1) });
+		const app = {
+			vault: {
+				getAllLoadedFiles: () => {
+					walks += 1;
+					return [folder("Projects"), folder("Projects/Archive")];
+				},
+			},
+		} as unknown as App;
+		const store = new Map<string, unknown>();
+		const memo = <T>(key: string, build: () => T): T => {
+			if (!store.has(key)) store.set(key, build());
+			return store.get(key) as T;
+		};
+		const ask = (text: string) =>
+			foldersSource
+				.getCandidates({ app, bar: EMPTY_CONTEXT, query: parseQuery(text), limit: 10, memo })
+				.map((candidate) => candidate.item.title);
+
+		expect(ask("arch")).toEqual(["Archive"]);
+		expect(ask("proj")).toEqual(["Projects", "Archive"]);
+		expect(ask("p:projects/a")).toEqual(["Archive"]);
+		expect(walks).toBe(1);
 	});
 });

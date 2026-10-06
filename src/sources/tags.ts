@@ -6,6 +6,7 @@ import { fuzzyFactory, orderByMatch, type Scorable } from "./files";
 import {
 	candidatesFromOrdered,
 	excluderFor,
+	memoOf,
 	sourceSettings,
 	type Source,
 	type SourceContext,
@@ -76,27 +77,19 @@ function tagsOutsideExclusions(app: App, isExcluded: (path: string) => boolean):
 	return allowed;
 }
 
-export const tagsSource: Source = {
-	id: "tag",
-
-	appliesTo(ctx: SourceContext): boolean {
-		return (
-			ctx.query.scope === "all" &&
-			ctx.query.kind === null &&
-			ctx.query.pathPrefix === null &&
-			ctx.query.modifiedWithinDays === null
-		);
-	},
-
-	getCandidates(ctx: SourceContext): Candidate[] {
-		const { app, query, limit } = ctx;
-		if (limit <= 0) return [];
-
+/**
+ * Every tag that survives the exclusions, as scorable rows. Built once per
+ * open of the bar: the internal tag table and — with exclusions — a walk of
+ * every note are far too much to redo per keystroke for a list that cannot
+ * change while the user types.
+ */
+function tagCorpus(ctx: SourceContext): Array<Scorable<OmniItem>> {
+	const excluded = sourceSettings(ctx).excludedFolders;
+	return memoOf(ctx, `tags:${excluded.join("\n")}`, () => {
+		const { app } = ctx;
 		// null means "nothing is excluded, keep every tag" — and costs nothing.
 		const allowed =
-			sourceSettings(ctx).excludedFolders.length === 0
-				? null
-				: tagsOutsideExclusions(app, excluderFor(ctx));
+			excluded.length === 0 ? null : tagsOutsideExclusions(app, excluderFor(ctx));
 
 		const entries: Array<Scorable<OmniItem>> = [];
 		for (const { tag, count } of getAllVaultTags(app)) {
@@ -117,6 +110,27 @@ export const tagsSource: Source = {
 			};
 			entries.push({ value: item, terms: [fold(bare)].filter((term) => term.length > 0) });
 		}
+		return entries;
+	});
+}
+
+export const tagsSource: Source = {
+	id: "tag",
+
+	appliesTo(ctx: SourceContext): boolean {
+		return (
+			ctx.query.scope === "all" &&
+			ctx.query.kind === null &&
+			ctx.query.pathPrefix === null &&
+			ctx.query.modifiedWithinDays === null
+		);
+	},
+
+	getCandidates(ctx: SourceContext): Candidate[] {
+		const { query, limit } = ctx;
+		if (limit <= 0) return [];
+
+		const entries = tagCorpus(ctx);
 
 		// "#proj" is parsed into query.tags, not into query.text — so a bare tag
 		// token has to drive this source's own matching or typing a tag would
