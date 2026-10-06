@@ -12,7 +12,9 @@ import { Platform } from "obsidian";
 export class SelectionPill {
 	private pillEl: HTMLElement | null = null;
 	private listEl: HTMLElement | null = null;
-	private observer: MutationObserver | null = null;
+	/** The animation frame an update is queued for, if any. */
+	private frame: number | null = null;
+	private frameWin: Window | null = null;
 
 	/**
 	 * @param fallbackEl element that carries `barosaurus-no-pill` when the
@@ -21,7 +23,15 @@ export class SelectionPill {
 	 */
 	constructor(private readonly fallbackEl: HTMLElement) {}
 
-	/** Idempotent; call freely on every render pass. */
+	/**
+	 * Idempotent; call freely on every render pass.
+	 *
+	 * There is no observer of its own any more. The pill used to watch the
+	 * list for class flips next to the modal's observer watching the same
+	 * list for the same flips, and each fired a synchronous measure-and-write
+	 * — layout thrash on every arrow key. The modal now calls `schedule()`
+	 * from its one selection hook instead.
+	 */
 	mount(listEl: HTMLElement): void {
 		// Touch has no hover, no arrow keys and no patience for a blur layer.
 		// isPhone, NOT isMobile: isMobile covers tablets too, and a tablet runs
@@ -32,14 +42,28 @@ export class SelectionPill {
 		this.destroy();
 		this.listEl = listEl;
 		this.pillEl = listEl.createDiv({ cls: "barosaurus-pill is-teleporting" });
-		this.observer = new MutationObserver(() => this.update());
-		this.observer.observe(listEl, {
-			attributes: true,
-			attributeFilter: ["class"],
-			subtree: true,
-			childList: true,
+		this.schedule();
+	}
+
+	/**
+	 * Re-measure on the next frame. Any number of calls within one frame
+	 * collapse into one read and one write, after the browser has laid out
+	 * whatever changed the selection.
+	 */
+	schedule(): void {
+		const pill = this.pillEl;
+		if (pill === null || this.frame !== null) return;
+		const win = pill.win;
+		if (typeof win.requestAnimationFrame !== "function") {
+			this.update();
+			return;
+		}
+		this.frameWin = win;
+		this.frame = win.requestAnimationFrame(() => {
+			this.frame = null;
+			this.frameWin = null;
+			this.update();
 		});
-		this.update();
 	}
 
 	private update(): void {
@@ -97,8 +121,9 @@ export class SelectionPill {
 	}
 
 	destroy(): void {
-		this.observer?.disconnect();
-		this.observer = null;
+		if (this.frame !== null) this.frameWin?.cancelAnimationFrame(this.frame);
+		this.frame = null;
+		this.frameWin = null;
 		this.pillEl?.remove();
 		this.pillEl = null;
 		this.listEl = null;

@@ -846,6 +846,11 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	}
 
 	private syncSelectionUnobserved(): void {
+		// The pill follows every selection change and every repaint; it is
+		// coalesced to one measurement per frame, so calling it this often is
+		// what replaced its own observer, not a cost.
+		this.pill.mount(this.resultContainerEl);
+		this.pill.schedule();
 		const rows = this.rowEls();
 		const landed = rows.findIndex((el) => el.hasClass("is-selected"));
 		if (landed < 0) return;
@@ -877,7 +882,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// this code.
 		if (index === this.selectedIndex) return;
 		this.selectedIndex = index;
-		this.pill.mount(this.resultContainerEl);
+		this.pill.schedule();
 		this.showPreviewFor();
 
 		// Keep the group's label on screen with its first row. Not

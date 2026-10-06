@@ -568,9 +568,10 @@
 	background: var(--background-modifier-hover);
 	opacity: 0;
 	pointer-events: none;
+	/* No transition on height: animating it re-runs layout every frame. The
+	   transform glides on the compositor; the height simply snaps. */
 	transition:
 		transform 180ms cubic-bezier(0.3, 1, 0.4, 1),
-		height 180ms cubic-bezier(0.3, 1, 0.4, 1),
 		opacity 120ms ease;
 }
 
