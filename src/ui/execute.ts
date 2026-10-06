@@ -829,10 +829,12 @@ class ConfirmModal extends Modal {
 		this.contentEl.addClass("barosaurus-confirm");
 		this.contentEl.createEl("p", { text: this.spec.body });
 		let confirmEl: HTMLElement | null = null;
+		let cancelEl: HTMLElement | null = null;
 		new Setting(this.contentEl)
-			.addButton((button) =>
-				button.setButtonText("Cancel").onClick(() => this.finish(false)),
-			)
+			.addButton((button) => {
+				button.setButtonText("Cancel").onClick(() => this.finish(false));
+				cancelEl = button.buttonEl;
+			})
 			.addButton((button) => {
 				button
 					.setButtonText(this.spec.confirmText)
@@ -843,9 +845,12 @@ class ConfirmModal extends Modal {
 		// The bar is driven from the keyboard, so the dialog it opens must be
 		// too: Enter confirms, Esc cancels (Modal's own), and the focus ring
 		// sits on the button Enter will press — never on one it will not.
+		// Enter answers for the FOCUSED button: tabbing to Cancel and pressing
+		// Enter must cancel, never delete.
 		this.scope.register([], "Enter", (event) => {
 			event.preventDefault();
-			this.finish(true);
+			const cancel: HTMLElement | null = cancelEl;
+			this.finish(cancel === null || cancel.ownerDocument.activeElement !== cancel);
 			return false;
 		});
 		(confirmEl as HTMLElement | null)?.focus();

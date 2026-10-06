@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
-import { TFile, TFolder, type App } from "obsidian";
+import { describe, expect, it, vi } from "vitest";
+import { Scope, TFile, TFolder, type App } from "obsidian";
 import { parseQuery } from "../../src/core/query";
 import { EMPTY_CONTEXT, type OmniItem } from "../../src/core/types";
 import { invalidNameReason, resolvePrefixFolder } from "../../src/sources/create";
@@ -230,6 +230,31 @@ describe("the delete confirmation", () => {
 		focused?.click();
 		expect(await outcome).toBe("close");
 		expect(trashed).toEqual(["Inbox/Old.md"]);
+	});
+
+	it("cancels on Enter when the focus was moved to Cancel", async () => {
+		type Handler = (evt: KeyboardEvent) => unknown;
+		const handlers: Handler[] = [];
+		const original = Scope.prototype.register;
+		const spy = vi
+			.spyOn(Scope.prototype, "register")
+			.mockImplementation(function (this: Scope, mods, key, handler) {
+				if (key === "Enter") handlers.push(handler as unknown as Handler);
+				return original.call(this, mods, key, handler);
+			});
+		try {
+			const { app, item, trashed } = deleteApp();
+			const outcome = runAction({ app, remember: () => undefined }, "delete", item);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			dialogButtons()
+				.find((button) => button.textContent === "Cancel")
+				?.focus();
+			handlers.at(-1)?.(new KeyboardEvent("keydown", { key: "Enter" }));
+			expect(await outcome).toBe("stay");
+			expect(trashed).toEqual([]);
+		} finally {
+			spy.mockRestore();
+		}
 	});
 });
 
