@@ -160,6 +160,11 @@ export interface OmnibarOptions {
 	actions?: ActionController;
 	placeholder?: string;
 	instructions?: Instruction[];
+	/**
+	 * Text the input starts with — ">" for "search commands", "@" for "go to
+	 * heading". The bar then opens already scoped, exactly as if typed.
+	 */
+	initialQuery?: string;
 }
 
 /**
@@ -323,6 +328,9 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		this.inputWin.addEventListener("keyup", this.modHeld);
 		this.renderBreadcrumbs();
 		this.pill.mount(this.resultContainerEl);
+		if (this.options.initialQuery !== undefined && this.options.initialQuery.length > 0) {
+			this.inputEl.value = this.options.initialQuery;
+		}
 		// Populate the empty state immediately rather than after the first key.
 		this.refresh();
 	}

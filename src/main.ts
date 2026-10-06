@@ -80,6 +80,18 @@ export const ALL_SOURCES: readonly (Source | StreamingSource)[] = [
 	propertiesSource,
 ];
 
+/**
+ * Commands that open the bar already narrowed — the same sigils a user types.
+ * A "notes only" entry is deliberately absent: the kind letter needs a word
+ * after it ("n " alone stays a search for the letter n, by design in
+ * core/query.ts), so it cannot be pre-typed.
+ */
+const SCOPED_ENTRIES: ReadonlyArray<{ id: string; name: string; query: string }> = [
+	{ id: "search-commands", name: "Search commands", query: ">" },
+	{ id: "go-to-heading", name: "Go to heading", query: "@" },
+	{ id: "go-to-line", name: "Go to line", query: ":" },
+];
+
 export default class BarosaurusPlugin extends Plugin {
 	settings: BarosaurusSettings = { ...DEFAULT_SETTINGS };
 	data: PersistentData = structuredClone(DEFAULT_DATA);
@@ -112,6 +124,16 @@ export default class BarosaurusPlugin extends Plugin {
 		// Obsidian prefixes the plugin name itself, so this renders as
 		// "Barosaurus: Open". Naming it "Open Barosaurus" would stutter.
 		this.addCommand({ id: "open", name: "Open", callback: () => this.openBar() });
+		// Pre-scoped entry points, for people who would rather bind a key to
+		// "commands only" than type ">" every time. No default hotkeys, as
+		// with "Open" — the user picks them.
+		for (const entry of SCOPED_ENTRIES) {
+			this.addCommand({
+				id: entry.id,
+				name: entry.name,
+				callback: () => this.openBar(entry.query),
+			});
+		}
 
 		this.applyRibbonIcon();
 
@@ -188,7 +210,7 @@ export default class BarosaurusPlugin extends Plugin {
 
 	// ------------------------------------------------------------- opening
 
-	private openBar(): void {
+	private openBar(initialQuery?: string): void {
 		// Deferred: command pickers and the mobile quick-action overlay dismiss
 		// themselves right after invoking a command and would sweep a
 		// synchronously opened modal away with them. Barosaurus is the command
@@ -196,7 +218,7 @@ export default class BarosaurusPlugin extends Plugin {
 		window.setTimeout(
 			() => {
 				try {
-					this.buildModal().open();
+					this.buildModal(initialQuery).open();
 				} catch (error) {
 					console.error("Barosaurus: failed to open the bar", error);
 					new Notice(
@@ -208,7 +230,7 @@ export default class BarosaurusPlugin extends Plugin {
 		);
 	}
 
-	private buildModal(): OmnibarModal {
+	private buildModal(initialQuery?: string): OmnibarModal {
 		const host: ExecuteHost = {
 			app: this.app,
 			remember: (id) => {
@@ -272,6 +294,7 @@ export default class BarosaurusPlugin extends Plugin {
 			settings: () => this.settings,
 			actions: createActionController(host),
 			placeholder: "Search, jump, or do something…",
+			initialQuery,
 			onChoose: (item, _evt, paneType) => void choose(host, item, paneType),
 		});
 	}

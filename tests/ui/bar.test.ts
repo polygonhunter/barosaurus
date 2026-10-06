@@ -606,3 +606,32 @@ describe("streaming sources fold in behind the first paint", () => {
 		expect(calls.filter((text) => text === "bold")).toEqual([]);
 	});
 });
+
+describe("opening pre-scoped", () => {
+	it("starts with the initial query typed in and scoped by it", async () => {
+		const app = {
+			vault: { getFileByPath: () => null, getResourcePath: () => "" },
+			workspace: { getActiveViewOfType: () => null },
+		} as unknown as App;
+		const seen: string[] = [];
+		const modal = new OmnibarModal(app, {
+			sources: [
+				{
+					id: "spy",
+					appliesTo: () => true,
+					getCandidates: (ctx: SourceContext) => {
+						seen.push(ctx.query.scope);
+						return [];
+					},
+				},
+			],
+			showPreview: false,
+			initialQuery: ">",
+		});
+		modal.open();
+		opened.push(modal);
+		await settle();
+		expect(modal.inputEl.value).toBe(">");
+		expect(seen[0]).toBe("command");
+	});
+});

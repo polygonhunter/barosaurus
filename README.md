@@ -18,6 +18,8 @@ Barosaurus ships **without a shortcut**, because a plugin should not quietly tak
 
 One thing before you take `⌘K`: Obsidian already uses it for *Insert link*. Move that one to `⌘⇧K` first and the two live together happily. The settings tab has a button that jumps straight to the hotkey list.
 
+Three more commands open the bar already narrowed, for a key of their own if you want one: **`Barosaurus: Search commands`** (starts with `>`), **`Barosaurus: Go to heading`** (`@`) and **`Barosaurus: Go to line`** (`:`). They have no shortcut either.
+
 Would you rather not spend a shortcut at all? Switch on **double-tap shift** in the settings and press shift twice. There is a ribbon icon too, on by default, so the bar is reachable before you configure anything.
 
 > Keys are written for macOS throughout. On Windows and Linux, `⌘` is `Ctrl`.
