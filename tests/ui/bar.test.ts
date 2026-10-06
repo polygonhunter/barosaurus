@@ -6,7 +6,7 @@ import { ALL_SOURCES } from "../../src/main";
 import { choose, runAction, type ExecuteHost } from "../../src/ui/execute";
 import { OmnibarModal } from "../../src/ui/omnibar-modal";
 import type { Candidate, OmniItem } from "../../src/core/types";
-import type { Source, SourceContext } from "../../src/sources/source";
+import type { Source, SourceContext, StreamingSource } from "../../src/sources/source";
 
 /**
  * The bar, actually running.
@@ -537,3 +537,72 @@ function helpItem(actionId: string): OmniItem {
 		tile: { kind: "icon", icon: "life-buoy" },
 	} as OmniItem;
 }
+
+describe("streaming sources fold in behind the first paint", () => {
+	beforeEach(() => {
+		document.body.empty();
+	});
+
+	function streamingOf(items: readonly OmniItem[], calls: string[]): StreamingSource {
+		return {
+			id: "slow",
+			streaming: true,
+			appliesTo: () => true,
+			getCandidates: (ctx: SourceContext) => {
+				calls.push(ctx.query.text);
+				return Promise.resolve(items.map((item) => ({ item, norm: 1 }) as Candidate));
+			},
+		};
+	}
+
+	function openTwoPhase(calls: string[]): OmnibarModal {
+		const app = {
+			vault: { getFileByPath: () => null, getResourcePath: () => "" },
+			workspace: { getActiveViewOfType: () => null },
+		} as unknown as App;
+		const modal = new OmnibarModal(app, {
+			sources: [
+				sourceOf([commandItem("bold", "Bold")]),
+				streamingOf([commandItem("bolder", "Bold in body text")], calls),
+			],
+			showPreview: false,
+		});
+		modal.open();
+		opened.push(modal);
+		return modal;
+	}
+
+	it("shows the synchronous rows at once and mixes the streamed ones in later", async () => {
+		const calls: string[] = [];
+		const modal = openTwoPhase(calls);
+		type(modal, "bold");
+		await settle();
+		// First paint: titles only, nothing waited on the slow source.
+		expect(rowTitles(modal).join("|")).toContain("Bold");
+		expect(rowTitles(modal).join("|")).not.toContain("Bold in body text");
+
+		await vi.waitFor(() => expect(rowTitles(modal).join("|")).toContain("Bold in body text"));
+	});
+
+	it("asks the slow source only once typing pauses", async () => {
+		const calls: string[] = [];
+		const modal = openTwoPhase(calls);
+		await vi.waitFor(() => expect(calls).toEqual([""]));
+		calls.length = 0;
+		type(modal, "b");
+		type(modal, "bo");
+		type(modal, "bol");
+		type(modal, "bold");
+		await vi.waitFor(() => expect(calls).toEqual(["bold"]));
+	});
+
+	it("never repaints a closed bar with a late answer", async () => {
+		const calls: string[] = [];
+		const modal = openTwoPhase(calls);
+		type(modal, "bold");
+		await settle();
+		modal.close();
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		expect(calls.filter((text) => text === "bold")).toEqual([]);
+	});
+});

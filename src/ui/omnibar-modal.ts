@@ -57,6 +57,29 @@ const ENTER_DURATION_MS = 450;
 const DEFAULT_SOURCE_LIMIT = 60;
 /** Direct-pick shortcuts: ⌘1–9. */
 const DIRECT_PICK_COUNT = 9;
+/**
+ * How long the streaming sources wait for typing to pause. The title matches
+ * render at once; the full-text pass is a large synchronous MiniSearch query,
+ * and running it for every intermediate keystroke is what made typing stutter.
+ */
+const STREAM_DEBOUNCE_MS = 120;
+
+/** Resolves after `ms`, or as soon as the signal aborts. */
+function pause(win: Window, ms: number, signal: AbortSignal): Promise<void> {
+	return new Promise((resolve) => {
+		if (signal.aborted) {
+			resolve();
+			return;
+		}
+		const timer = win.setTimeout(done, ms);
+		signal.addEventListener("abort", done, { once: true });
+		function done(): void {
+			win.clearTimeout(timer);
+			signal.removeEventListener("abort", done);
+			resolve();
+		}
+	});
+}
 
 const DEFAULT_INSTRUCTIONS: Instruction[] = [
 	{ command: "↑↓", purpose: "Navigate" },
@@ -192,6 +215,12 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 
 	private queryToken = 0;
 	private inflight: AbortController | null = null;
+	/**
+	 * What the streaming sources answered, and for which input. The second
+	 * paint is a plain refresh(): getSuggestions finds this, mixes it into the
+	 * synchronous results and returns at once.
+	 */
+	private streamed: { query: string; candidates: Candidate[] } | null = null;
 	private busy = false;
 	private scopeLabel = "";
 
@@ -515,16 +544,11 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		this.inflight = controller;
 
 		const candidates: Candidate[] = [];
-		const pending: Array<Promise<Candidate[]>> = [];
+		const streaming: StreamingSource[] = [];
 		for (const source of this.options.sources) {
 			if (!source.appliesTo(ctx)) continue;
 			if (isStreaming(source)) {
-				pending.push(
-					source.getCandidates(ctx, controller.signal).catch((error: unknown) => {
-						console.error(`Barosaurus: source "${source.id}" failed`, error);
-						return [];
-					}),
-				);
+				streaming.push(source);
 			} else {
 				// One throwing source must not take the whole query with it.
 				// getSuggestions is async, so an escaping throw becomes an
@@ -541,18 +565,62 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// Deduplicate BEFORE ranking and grouping: a "found in text" row for a
 		// file the title source already returned would otherwise spend a slot
 		// in its group's budget on a row that is then dropped.
-		if (pending.length === 0) {
+		if (streaming.length === 0) {
+			this.streamed = null;
+			this.setBusy(false);
 			return this.finish(this.build(dedupeFullText(candidates), parsed, bar));
 		}
 
+		// Second paint of this same input: the streaming answer is in.
+		if (this.streamed?.query === query) {
+			this.setBusy(false);
+			const all = [...candidates, ...this.streamed.candidates];
+			return this.finish(this.build(dedupeFullText(all), parsed, bar));
+		}
+
+		// First paint: the synchronous sources, right now. The streaming ones
+		// run behind it and mix in through a refresh — waiting for them here
+		// held the title matches back by the whole full-text pass.
+		this.streamed = null;
 		this.setBusy(true);
-		const streamed = await Promise.all(pending);
-		this.setBusy(false);
-		// A newer keystroke owns the list now; keep what is on screen rather
-		// than repainting it with an answer to a question nobody asked.
-		if (token !== this.queryToken) return this.rows;
-		for (const batch of streamed) candidates.push(...batch);
+		void this.runStreaming(streaming, ctx, controller.signal, token, query, candidates);
 		return this.finish(this.build(dedupeFullText(candidates), parsed, bar));
+	}
+
+	/**
+	 * Phase two of a query: wait for typing to pause, ask the streaming
+	 * sources, park their answer and repaint. Every await is a window in which
+	 * a newer keystroke may have taken over — then the answer is dropped.
+	 */
+	private async runStreaming(
+		sources: readonly StreamingSource[],
+		ctx: SourceContext,
+		signal: AbortSignal,
+		token: number,
+		query: string,
+		sync: readonly Candidate[],
+	): Promise<void> {
+		await pause(this.inputWin, STREAM_DEBOUNCE_MS, signal);
+		if (signal.aborted || token !== this.queryToken) return;
+		const batches = await Promise.all(
+			sources.map((source) =>
+				source.getCandidates(ctx, signal).catch((error: unknown) => {
+					console.error(`Barosaurus: source "${source.id}" failed`, error);
+					return [] as Candidate[];
+				}),
+			),
+		);
+		if (signal.aborted || token !== this.queryToken) return;
+		const streamed = batches.flat();
+		this.streamed = { query, candidates: streamed };
+		this.setBusy(false);
+		// Nothing new to show — no hits, or every hit was a file the titles
+		// already had. Skipping the repaint keeps the selection where it is.
+		// An empty list is repainted anyway: its "Searching…" must become
+		// "No matches.".
+		const adds = dedupeFullText([...sync, ...streamed]).length > sync.length;
+		if (!adds && sync.length > 0) return;
+		this.refresh();
 	}
 
 	/**
@@ -626,9 +694,11 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		this.emptyStateText =
 			page !== undefined
 				? page.emptyText
-				: this.scopeLabel.length > 0
-					? "Nothing here."
-					: "No matches.";
+				: this.busy
+					? "Searching…"
+					: this.scopeLabel.length > 0
+						? "Nothing here."
+						: "No matches.";
 		super.onNoSuggestion();
 	}
 

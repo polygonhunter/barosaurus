@@ -42,7 +42,10 @@ function miniSearchOptions(weights: FieldWeights): Options<IndexedDoc> {
 		processTerm,
 		searchOptions: {
 			prefix: (term) => term.length >= 2,
-			fuzzy: (term) => (term.length >= 4 ? 0.2 : false),
+			// Fuzzy expansion is the expensive part of a query over the whole
+			// vault's text. Short terms get none (prefix already covers them),
+			// and 0.15 keeps it to one edit until a term is ten letters long.
+			fuzzy: (term) => (term.length >= 5 ? 0.15 : false),
 			combineWith: "AND",
 			boost: { ...weights },
 		},
