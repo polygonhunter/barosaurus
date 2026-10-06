@@ -290,6 +290,10 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		this.preview?.destroy();
 		this.inflight?.abort();
 		this.inflight = null;
+		// Invalidate the query that may still be awaiting its streaming
+		// sources: without this it woke up after close and ranked, grouped
+		// and rendered a full result list into a modal nobody can see.
+		this.queryToken += 1;
 		super.onClose();
 	}
 
