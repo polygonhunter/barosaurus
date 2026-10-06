@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import type { App } from "obsidian";
+import { TFile, type App } from "obsidian";
 import { parseQuery } from "../../src/core/query";
 import { EMPTY_CONTEXT, type OmniItem } from "../../src/core/types";
 import { ghostSource, isAttachmentLinktext } from "../../src/sources/ghost";
-import { choose, runAction } from "../../src/ui/execute";
+import { choose, runAction, subpathOf } from "../../src/ui/execute";
 
 /**
  * The executor and the sources it depends on, against a recording fake App.
@@ -93,5 +93,53 @@ describe("bookmark", () => {
 		} as unknown as OmniItem;
 		await runAction({ app, remember: () => undefined }, "bookmark", item);
 		expect(ran).toEqual([]);
+	});
+});
+
+describe("links to headings and blocks keep their subpath", () => {
+	function linkApp() {
+		const inserted: string[] = [];
+		const file = new TFile();
+		file.path = "Projects/Plan.md";
+		const app = {
+			vault: { getFileByPath: (path: string) => (path === file.path ? file : null) },
+			workspace: {
+				activeEditor: { editor: { replaceSelection: (text: string) => inserted.push(text) } },
+				getActiveFile: () => null,
+			},
+			fileManager: {
+				generateMarkdownLink: (target: TFile, _source: string, subpath?: string) =>
+					`[[${target.path}${subpath ?? ""}]]`,
+			},
+		} as unknown as App;
+		return { app, inserted };
+	}
+
+	const heading = {
+		kind: "heading",
+		source: "heading",
+		group: "structure",
+		id: "heading:Projects/Plan.md:4",
+		title: "Budget: Q3 [draft]",
+		aliases: [],
+		tile: { kind: "heading", level: 2 },
+		path: "Projects/Plan.md",
+		level: 2,
+		line: 4,
+	} as unknown as OmniItem;
+
+	it("inserts a heading link with #heading", async () => {
+		const { app, inserted } = linkApp();
+		await runAction({ app, remember: () => undefined }, "insert-link", heading);
+		expect(inserted).toEqual(["[[Projects/Plan.md#Budget Q3 draft]]"]);
+	});
+
+	it("builds #^id for blocks and nothing for whole files", () => {
+		expect(subpathOf({ ...heading, kind: "block", blockId: "abc123" } as unknown as OmniItem)).toBe(
+			"#^abc123",
+		);
+		expect(
+			subpathOf({ kind: "file", path: "a.md", title: "a" } as unknown as OmniItem),
+		).toBeUndefined();
 	});
 });

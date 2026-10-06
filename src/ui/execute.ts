@@ -588,7 +588,7 @@ async function appendToDailyNote(app: App, item: OmniItem): Promise<void> {
 	const file = path === null ? null : app.vault.getFileByPath(path);
 	const link =
 		file instanceof TFile
-			? app.fileManager.generateMarkdownLink(file, daily.path)
+			? app.fileManager.generateMarkdownLink(file, daily.path, subpathOf(item))
 			: item.title;
 	await app.vault.append(daily, `\n- ${link}`);
 	new Notice(`Appended to “${daily.basename}”`);
@@ -854,6 +854,23 @@ function confirm(app: App, spec: ConfirmSpec): Promise<boolean> {
 
 // ------------------------------------------------------------------ helpers
 
+/**
+ * The `#Heading` / `#^block` part of a link to this item, or undefined for
+ * whole files. Without it, "insert link" on a heading row linked the note and
+ * dropped the very thing the user had picked.
+ *
+ * Characters that end or break a wikilink target are replaced the way
+ * Obsidian's own "copy link to heading" does, so the link still resolves.
+ */
+export function subpathOf(item: OmniItem): string | undefined {
+	if (item.kind === "heading") {
+		const heading = item.title.replace(/[#|^:[\]\\]/g, " ").replace(/\s+/g, " ").trim();
+		return heading.length > 0 ? `#${heading}` : undefined;
+	}
+	if (item.kind === "block") return `#^${item.blockId}`;
+	return undefined;
+}
+
 function pathOf(item: OmniItem): string | null {
 	if (
 		item.kind === "file" ||
@@ -943,7 +960,9 @@ function insertLink(app: App, item: OmniItem): boolean {
 	const file = app.vault.getFileByPath(path);
 	if (!(file instanceof TFile)) return false;
 	const sourcePath = app.workspace.getActiveFile()?.path ?? "";
-	editor.replaceSelection(app.fileManager.generateMarkdownLink(file, sourcePath));
+	editor.replaceSelection(
+		app.fileManager.generateMarkdownLink(file, sourcePath, subpathOf(item)),
+	);
 	return true;
 }
 
@@ -952,7 +971,7 @@ async function copyLink(app: App, item: OmniItem): Promise<void> {
 	if (!path) return;
 	const file = app.vault.getFileByPath(path);
 	if (!(file instanceof TFile)) return;
-	const link = app.fileManager.generateMarkdownLink(file, "");
+	const link = app.fileManager.generateMarkdownLink(file, "", subpathOf(item));
 	await navigator.clipboard.writeText(link);
 	new Notice("Link copied");
 }
