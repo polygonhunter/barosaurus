@@ -143,7 +143,17 @@ export type OmniItem =
 	| (OmniItemBase & { kind: "folder"; source: "folder"; path: string })
 	| (OmniItemBase & { kind: "tag"; source: "tag"; tag: string; count: number })
 	| (OmniItemBase & { kind: "action"; source: "command"; actionId: string })
-	| (OmniItemBase & { kind: "ghost"; source: "ghost"; linktext: string })
+	| (OmniItemBase & {
+			kind: "ghost";
+			source: "ghost";
+			linktext: string;
+			/**
+			 * A note that contains the link. Creating through it lets Obsidian
+			 * resolve the linktext exactly as a click on the link would —
+			 * including folders in it and the "new note location" setting.
+			 */
+			sourcePath?: string;
+	  })
 	| (OmniItemBase & {
 			kind: "create";
 			source: "create";

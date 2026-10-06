@@ -173,11 +173,15 @@ export async function choose(
 				}
 				break;
 			case "ghost":
-				await createNote(app, item.linktext, null, paneType);
+				// Exactly what clicking the link does: Obsidian resolves the
+				// linktext against the note it sits in and creates the target
+				// where the user's "new note" settings say. createNotePath
+				// would flatten "Projects/Plan" into a note named "Projects Plan".
+				await app.workspace.openLinkText(item.linktext, item.sourcePath ?? "", paneType);
 				break;
 			case "create":
 				// The row showed a path; create exactly that one.
-				await createNote(app, item.query, item.path, paneType);
+				await createNote(app, item.path, paneType);
 				break;
 		}
 		host.remember(item.id);
@@ -913,21 +917,12 @@ async function activateTab(
 }
 
 /**
- * `explicitPath` is the path a Create row already showed the user — sanitised
- * and folded into any `p:` prefix. Passing null means "work it out", which is
- * what a ghost link needs.
+ * `path` is the path a Create row already showed the user — sanitised and
+ * folded into any `p:` prefix — so exactly that one is created. Ghost links do
+ * NOT come through here: they go through openLinkText, which resolves folders
+ * inside the linktext the way a click on the link would.
  */
-async function createNote(
-	app: App,
-	title: string,
-	explicitPath: string | null,
-	paneType: PaneType | boolean,
-): Promise<void> {
-	let path = explicitPath;
-	if (path === null) {
-		const parent = app.fileManager.getNewFileParent(app.workspace.getActiveFile()?.path ?? "");
-		path = createNotePath(title, parent.path);
-	}
+async function createNote(app: App, path: string, paneType: PaneType | boolean): Promise<void> {
 	const existing = app.vault.getFileByPath(path);
 	const file = existing ?? (await app.vault.create(path, ""));
 	await app.workspace.getLeaf(paneType).openFile(file);

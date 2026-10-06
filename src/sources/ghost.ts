@@ -17,6 +17,45 @@ import { candidatesFromOrdered, excluderFor, type Source, type SourceContext } f
 
 const GHOST_LIMIT = 3;
 
+/**
+ * Unresolved embeds of attachments (`![[scan.png]]`) land in unresolvedLinks
+ * too. Offering to "create" them would make an empty markdown note named
+ * `scan.png.md`. Only well-known attachment extensions are dropped: a dot in a
+ * note title ("Release 1.2") is perfectly normal and must stay.
+ */
+const ATTACHMENT_EXTENSIONS = new Set([
+	"png",
+	"jpg",
+	"jpeg",
+	"gif",
+	"webp",
+	"svg",
+	"bmp",
+	"avif",
+	"pdf",
+	"mp3",
+	"wav",
+	"m4a",
+	"ogg",
+	"flac",
+	"3gp",
+	"webm",
+	"mp4",
+	"mov",
+	"mkv",
+	"ogv",
+	"canvas",
+	"base",
+]);
+
+/** True for linktexts that name an attachment rather than a note. */
+export function isAttachmentLinktext(linktext: string): boolean {
+	const name = linktext.slice(linktext.lastIndexOf("/") + 1);
+	const dot = name.lastIndexOf(".");
+	if (dot <= 0) return false;
+	return ATTACHMENT_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
+}
+
 export const ghostSource: Source = {
 	id: "ghost",
 
@@ -45,7 +84,7 @@ export const ghostSource: Source = {
 		// Aggregate first: the same missing note is usually linked from several
 		// places, and "linked from 4 notes" is the useful signal.
 		const isExcluded = excluderFor(ctx);
-		const counts = new Map<string, { linktext: string; sources: number }>();
+		const counts = new Map<string, { linktext: string; sources: number; from: string }>();
 		// unresolvedLinks is keyed by the SOURCE note's path, so a link that
 		// only exists inside an excluded folder is skipped along with it — and
 		// its count stops inflating "linked from n notes".
@@ -53,19 +92,23 @@ export const ghostSource: Source = {
 			if (links === null || typeof links !== "object") continue;
 			if (isExcluded(notePath)) continue;
 			for (const linktext of Object.keys(links)) {
+				if (isAttachmentLinktext(linktext)) continue;
 				const folded = fold(linktext);
 				if (folded.length === 0) continue;
 				const existing = counts.get(folded);
-				if (existing === undefined) counts.set(folded, { linktext, sources: 1 });
-				else existing.sources += 1;
+				if (existing === undefined) {
+					counts.set(folded, { linktext, sources: 1, from: notePath });
+					continue;
+				}
+				existing.sources += 1;
 			}
 		}
 
 		const entries: Array<Scorable<OmniItem>> = [];
-		for (const [folded, { linktext, sources }] of counts) {
+		for (const [folded, { linktext, sources, from }] of counts) {
 			// unresolvedLinks can lag behind reality; a link that resolves today
 			// is a real note and the files source owns it.
-			if (app.metadataCache.getFirstLinkpathDest(linktext, "") !== null) continue;
+			if (app.metadataCache.getFirstLinkpathDest(linktext, from) !== null) continue;
 			entries.push({
 				value: {
 					id: `ghost:${linktext}`,
@@ -77,6 +120,7 @@ export const ghostSource: Source = {
 					subtitle: `Not created yet — linked from ${sources} ${sources === 1 ? "note" : "notes"}`,
 					tile: { kind: "icon", icon: "unlink" },
 					linktext,
+					sourcePath: from,
 				},
 				terms: [folded],
 			});
