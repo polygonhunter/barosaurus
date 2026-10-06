@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TFile, type App, type Plugin } from "obsidian";
 import { SearchEngine } from "../../src/core/engine";
 import { DEFAULT_WEIGHTS } from "../../src/core/index-types";
 import { Indexer, type IndexHost } from "../../src/index/indexer";
+import { IndexPersistence } from "../../src/index/persistence";
 
 /**
  * The indexer against a fake vault: events in, docs out.
@@ -47,7 +48,11 @@ function fakeVault(): FakeVault {
 	} as unknown as App;
 	return {
 		app,
-		plugin: { registerEvent: () => undefined } as unknown as Plugin,
+		plugin: {
+			registerEvent: () => undefined,
+			registerDomEvent: (el: EventTarget, name: string, cb: EventListener) =>
+				el.addEventListener(name, cb),
+		} as unknown as Plugin,
 		fire(target, name, ...args) {
 			for (const cb of handlers.get(`${target}:${name}`) ?? []) cb(...args);
 		},
@@ -114,5 +119,50 @@ describe("Indexer ↔ extraction cache", () => {
 		expect(asked).toEqual([]);
 		expect(indexer.size).toBe(1);
 		indexer.stop();
+	});
+});
+
+describe("Indexer snapshots", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	function hide(): void {
+		Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+		document.dispatchEvent(new Event("visibilitychange"));
+		Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+	}
+
+	it("writes when the app is hidden, and only if something changed", async () => {
+		const save = vi.spyOn(IndexPersistence.prototype, "save").mockResolvedValue();
+		const vault = fakeVault();
+		vault.add("a.md");
+		const indexer = new Indexer(vault.app, new SearchEngine(DEFAULT_WEIGHTS), DEFAULT_WEIGHTS, {
+			getSettings: () => ({ excludedFolders: [] }),
+		});
+		await indexer.start(vault.plugin);
+		await settle(indexer);
+		expect(save).not.toHaveBeenCalled(); // still inside the quiet minute
+
+		hide();
+		expect(save).toHaveBeenCalledTimes(1);
+		hide();
+		expect(save).toHaveBeenCalledTimes(1); // nothing new to write
+
+		indexer.stop();
+		expect(save).toHaveBeenCalledTimes(1);
+	});
+
+	it("writes pending changes on stop instead of dropping them", async () => {
+		const save = vi.spyOn(IndexPersistence.prototype, "save").mockResolvedValue();
+		const vault = fakeVault();
+		vault.add("a.md");
+		const indexer = new Indexer(vault.app, new SearchEngine(DEFAULT_WEIGHTS), DEFAULT_WEIGHTS, {
+			getSettings: () => ({ excludedFolders: [] }),
+		});
+		await indexer.start(vault.plugin);
+		await settle(indexer);
+		indexer.stop();
+		expect(save).toHaveBeenCalledTimes(1);
 	});
 });

@@ -125,6 +125,15 @@ export class SearchEngine {
 		this.mini = MiniSearch.loadJSON(json, miniSearchOptions(this.weights));
 	}
 
+	/**
+	 * Same, but rebuilt in slices: MiniSearch yields to the event loop every
+	 * thousand terms, so a large vault's snapshot no longer freezes the app
+	 * for the whole deserialization at startup. Same string format as load().
+	 */
+	async loadAsync(json: string): Promise<void> {
+		this.mini = await MiniSearch.loadJSONAsync(json, miniSearchOptions(this.weights));
+	}
+
 	/** Drop everything (rebuild path). */
 	clear(): void {
 		this.mini = new MiniSearch(miniSearchOptions(this.weights));

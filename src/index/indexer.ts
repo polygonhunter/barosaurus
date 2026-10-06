@@ -1,4 +1,4 @@
-import { debounce, TFile, TFolder, type App, type Plugin } from "obsidian";
+import { TFile, TFolder, type App, type Plugin } from "obsidian";
 import type { SearchOptions } from "minisearch";
 import type { SearchEngine } from "../core/engine";
 import type { FieldWeights, SearchHit } from "../core/index-types";
@@ -8,6 +8,13 @@ import { IndexPersistence } from "./persistence";
 
 /** Files (re)indexed per chunk before yielding back to the UI thread. */
 const CHUNK_SIZE = 20;
+/**
+ * A snapshot is the WHOLE index serialized — megabytes for a large vault —
+ * so it is written after a quiet minute, not after every burst of typing…
+ */
+const SAVE_QUIET_MS = 60_000;
+/** …but never later than this after the first unsaved change. */
+const SAVE_MAX_WAIT_MS = 5 * 60_000;
 
 /** The slice of plugin settings the index cares about. */
 export interface IndexSettings {
@@ -51,6 +58,11 @@ export class Indexer {
 	private stopped = false;
 	/** The snapshot write in flight, so stop() can close the db after it. */
 	private pendingSave: Promise<void> | null = null;
+	/** Changes since the last snapshot; 0 means there is nothing to write. */
+	private dirty = 0;
+	/** When the oldest unsaved change happened (for the max wait). */
+	private dirtySince = 0;
+	private saveTimer: number | null = null;
 
 	constructor(
 		private readonly app: App,
@@ -104,9 +116,9 @@ export class Indexer {
 	 */
 	async start(plugin: Plugin): Promise<void> {
 		const persisted = await this.persistence.load(this.weights);
-		if (persisted) {
+		if (persisted && !this.stopped) {
 			try {
-				this.engine.load(persisted.indexJson);
+				await this.engine.loadAsync(persisted.indexJson);
 				for (const [path, mtime] of Object.entries(persisted.files)) {
 					this.indexedFiles.set(path, mtime);
 				}
@@ -121,6 +133,11 @@ export class Indexer {
 				this.linkDocs.clear();
 			}
 		}
+		// The app going to the background (phone switched away, window
+		// hidden) is the last reliable moment on mobile — write then.
+		plugin.registerDomEvent(activeDocument, "visibilitychange", () => {
+			if (activeDocument.visibilityState === "hidden") this.flushSave();
+		});
 		this.app.workspace.onLayoutReady(() => {
 			if (this.stopped) return;
 			this.registerEvents(plugin);
@@ -134,7 +151,7 @@ export class Indexer {
 	 * of the last quiet period, and the next start had to re-index them.
 	 */
 	stop(): void {
-		this.saveSoon.run();
+		this.flushSave();
 		this.stopped = true;
 		const pending = this.pendingSave ?? Promise.resolve();
 		void pending.finally(() => this.persistence.close());
@@ -147,6 +164,8 @@ export class Indexer {
 		this.engine.clear();
 		this.indexedFiles.clear();
 		this.linkDocs.clear();
+		this.clearSaveTimer();
+		this.dirty = 0;
 		await this.persistence.clear();
 		this.diffVault();
 	}
@@ -162,7 +181,7 @@ export class Indexer {
 
 	/** Let collaborators schedule an index snapshot. */
 	persistSoon(): void {
-		this.saveSoon();
+		this.markDirty();
 	}
 
 	// ------------------------------------------------------------ events
@@ -250,9 +269,9 @@ export class Indexer {
 		this.engine.remove(path);
 		for (const id of this.linkDocs.get(path) ?? []) this.engine.remove(id);
 		this.linkDocs.delete(path);
-		this.indexedFiles.delete(path);
+		const known = this.indexedFiles.delete(path);
 		this.queued.delete(path);
-		this.saveSoon();
+		if (known) this.markDirty();
 	}
 
 	/** Drop every indexed file under a folder. */
@@ -303,7 +322,6 @@ export class Indexer {
 		} finally {
 			this.processing = false;
 		}
-		if (!this.stopped) this.saveSoon();
 	}
 
 	private async indexPath(path: string): Promise<void> {
@@ -325,23 +343,45 @@ export class Indexer {
 			}
 			this.linkDocs.set(file.path, [...newLinkIds]);
 			this.indexedFiles.set(file.path, file.stat.mtime);
+			this.markDirty();
 			if (!isNote) this.host.onAttachmentIndexed?.(file);
 		} catch (error) {
 			console.error(`Barosaurus: failed to index ${path}`, error);
 		}
 	}
 
-	/** Persisting is cheap but not free — debounce behind quiet periods. */
-	private readonly saveSoon = debounce(
-		() => {
-			this.pendingSave = this.persistence.save(
-				this.weights,
-				this.engine.toJSON(),
-				Object.fromEntries(this.indexedFiles),
-				Object.fromEntries(this.linkDocs),
-			);
-		},
-		10_000,
-		true,
-	);
+	// ------------------------------------------------------------ snapshot
+
+	/**
+	 * Note one change and (re)arm the save timer: a quiet minute, capped so a
+	 * vault that never goes quiet is still saved every five minutes.
+	 */
+	private markDirty(): void {
+		if (this.stopped) return;
+		const now = Date.now();
+		if (this.dirty === 0) this.dirtySince = now;
+		this.dirty += 1;
+		this.clearSaveTimer();
+		const wait = Math.max(0, Math.min(SAVE_QUIET_MS, this.dirtySince + SAVE_MAX_WAIT_MS - now));
+		// `window`, not `activeWindow`: a timer has no DOM to belong to.
+		this.saveTimer = window.setTimeout(() => this.flushSave(), wait);
+	}
+
+	private clearSaveTimer(): void {
+		if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+		this.saveTimer = null;
+	}
+
+	/** Write the snapshot now — if, and only if, something changed. */
+	private flushSave(): void {
+		this.clearSaveTimer();
+		if (this.dirty === 0 || this.stopped) return;
+		this.dirty = 0;
+		this.pendingSave = this.persistence.save(
+			this.weights,
+			this.engine.toJSON(),
+			Object.fromEntries(this.indexedFiles),
+			Object.fromEntries(this.linkDocs),
+		);
+	}
 }
