@@ -296,25 +296,33 @@ export default class BarosaurusPlugin extends Plugin {
 	 * shift that was part of a chord must never open anything.
 	 */
 	private registerDoubleShift(): void {
-		// activeWindow, not the global: a popout window has its own document,
-		// and the bare global would leave the trigger dead there.
-		this.registerDomEvent(activeWindow.document, "keyup", (event: KeyboardEvent) => {
-			if (this.settings.triggerStyle !== "double-shift") return;
-			// Never stack a second bar on top of the one already open.
-			if (activeDocument.querySelector(".barosaurus-modal") !== null) return;
-			if (event.key !== "Shift" || event.ctrlKey || event.altKey || event.metaKey) {
-				this.lastShiftAt = 0;
-				return;
-			}
-			const now = Date.now();
-			if (now - this.lastShiftAt <= this.settings.doubleShiftWindowMs) {
-				this.lastShiftAt = 0;
-				this.openBar();
-				return;
-			}
-			this.lastShiftAt = now;
-		});
+		// Every window, not just the one that was active at load: a popout has
+		// its own document, and a listener on the main one never hears a key
+		// pressed there. Popouts opened later are picked up as they open.
+		this.registerDomEvent(activeWindow.document, "keyup", this.onShiftKeyup);
+		this.registerEvent(
+			this.app.workspace.on("window-open", (win) => {
+				this.registerDomEvent(win.doc, "keyup", this.onShiftKeyup);
+			}),
+		);
 	}
+
+	private readonly onShiftKeyup = (event: KeyboardEvent): void => {
+		if (this.settings.triggerStyle !== "double-shift") return;
+		// Never stack a second bar on top of the one already open.
+		if (activeDocument.querySelector(".barosaurus-modal") !== null) return;
+		if (event.key !== "Shift" || event.ctrlKey || event.altKey || event.metaKey) {
+			this.lastShiftAt = 0;
+			return;
+		}
+		const now = Date.now();
+		if (now - this.lastShiftAt <= this.settings.doubleShiftWindowMs) {
+			this.lastShiftAt = 0;
+			this.openBar();
+			return;
+		}
+		this.lastShiftAt = now;
+	};
 
 	// ------------------------------------------------------------- settings
 
