@@ -1,6 +1,6 @@
 import { Notice, Platform, loadPdfJs, type App, type Plugin, type TFile } from "obsidian";
 import type { SearchEngine } from "../core/engine";
-import { kindForExtension } from "../core/index-types";
+import { extractedTextKey, kindForExtension } from "../core/index-types";
 import { idleScheduler, OcrQueue } from "../core/ocr-queue";
 import { isPathExcluded } from "../core/paths";
 import { attachmentDoc } from "../index/content";
@@ -286,9 +286,16 @@ export class OcrPipeline implements OcrController {
 		}
 	}
 
-	/** Push extracted text into the index and schedule persistence. */
+	/**
+	 * Push extracted text into the index and schedule persistence — unless
+	 * exactly this text is already there. The start-up sweep calls this for
+	 * every cached attachment; without the check it re-upserted all of them
+	 * and rewrote the whole index snapshot on every launch.
+	 */
 	private apply(file: TFile, text: string): void {
-		this.engine.upsert(attachmentDoc(file, text.slice(0, MAX_EXTRACTED_CHARS)));
+		const clipped = text.slice(0, MAX_EXTRACTED_CHARS);
+		if (this.engine.textKeyOf(file.path) === extractedTextKey(clipped)) return;
+		this.engine.upsert(attachmentDoc(file, clipped));
 		this.persistSoon();
 	}
 

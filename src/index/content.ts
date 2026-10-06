@@ -1,5 +1,5 @@
 import { getAllTags, parseFrontMatterAliases, type App, type TFile } from "obsidian";
-import { kindForExtension, type IndexedDoc } from "../core/index-types";
+import { extractedTextKey, kindForExtension, type IndexedDoc } from "../core/index-types";
 
 /**
  * Turning one vault file into index documents. This is the Obsidian-facing
@@ -38,6 +38,7 @@ function emptyDoc(file: TFile): IndexedDoc {
 export function attachmentDoc(file: TFile, extractedText = ""): IndexedDoc {
 	const doc = emptyDoc(file);
 	doc.extractedText = extractedText;
+	doc.textKey = extractedTextKey(extractedText);
 	return doc;
 }
 

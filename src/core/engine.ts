@@ -24,6 +24,9 @@ const STORE_FIELDS = [
 	"tagList",
 	"url",
 	"line",
+	// Added without a schema bump on purpose: a snapshot written before it
+	// simply has no key, which reads as "differs" and costs one re-upsert.
+	"textKey",
 ] as const;
 
 /** Title-focused subset, for callers that want titles only (no body). */
@@ -76,6 +79,13 @@ export class SearchEngine {
 
 	has(id: string): boolean {
 		return this.mini.has(id);
+	}
+
+	/** The stored extracted-text fingerprint of a doc, if it is indexed. */
+	textKeyOf(id: string): string | undefined {
+		if (!this.mini.has(id)) return undefined;
+		const key = this.mini.getStoredFields(id)?.textKey;
+		return typeof key === "string" ? key : undefined;
 	}
 
 	get size(): number {

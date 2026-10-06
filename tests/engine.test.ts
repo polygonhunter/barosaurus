@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { SearchEngine, TITLE_FIELDS } from "../src/core/engine";
-import { DEFAULT_WEIGHTS, kindForExtension, type IndexedDoc } from "../src/core/index-types";
+import {
+	DEFAULT_WEIGHTS,
+	extractedTextKey,
+	kindForExtension,
+	type IndexedDoc,
+} from "../src/core/index-types";
 
 function doc(overrides: Partial<IndexedDoc> & { id: string }): IndexedDoc {
 	return {
@@ -169,5 +174,32 @@ describe("kindForExtension", () => {
 		expect(kindForExtension("pdf")).toBe("file");
 		expect(kindForExtension("canvas")).toBe("file");
 		expect(kindForExtension("")).toBe("file");
+	});
+});
+
+describe("extracted-text fingerprint", () => {
+	it("is stable for equal text and differs for changed text", () => {
+		expect(extractedTextKey("invoice 2026")).toBe(extractedTextKey("invoice 2026"));
+		expect(extractedTextKey("invoice 2026")).not.toBe(extractedTextKey("invoice 2025"));
+		expect(extractedTextKey("")).toBe("0:" + (0x811c9dc5).toString(36));
+	});
+
+	it("is stored with the doc and survives a snapshot round trip", () => {
+		const engine = makeEngine();
+		const key = extractedTextKey("scanned words");
+		engine.upsert(
+			doc({ id: "scan.png", kind: "image", extractedText: "scanned words", textKey: key }),
+		);
+		expect(engine.textKeyOf("scan.png")).toBe(key);
+		const restored = makeEngine();
+		restored.load(engine.toJSON());
+		expect(restored.textKeyOf("scan.png")).toBe(key);
+	});
+
+	it("reads as absent for unknown docs and docs from older snapshots", () => {
+		const engine = makeEngine();
+		engine.upsert(doc({ id: "old.png", kind: "image" }));
+		expect(engine.textKeyOf("old.png")).toBeUndefined();
+		expect(engine.textKeyOf("missing.png")).toBeUndefined();
 	});
 });

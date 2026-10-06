@@ -84,6 +84,28 @@ export interface IndexedDoc {
 	tagList: string[];
 	/** 0-based line of the link inside its note (link docs only). */
 	line?: number;
+	/**
+	 * Fingerprint of `extractedText` (attachments only). Stored so the OCR
+	 * pipeline can tell "this text is already in the index" without the text
+	 * itself being stored — see {@link extractedTextKey}.
+	 */
+	textKey?: string;
+}
+
+/**
+ * Cheap fingerprint of an extracted text: length plus 32-bit FNV-1a.
+ *
+ * Collisions only cost a skipped re-upsert of text that differs from what is
+ * indexed by the same length AND hash — and the next modify of the file
+ * re-indexes it anyway. Not a security boundary, just "did this change?".
+ */
+export function extractedTextKey(text: string): string {
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < text.length; i++) {
+		hash ^= text.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return `${text.length}:${(hash >>> 0).toString(36)}`;
 }
 
 /** A search hit: MiniSearch's score plus the stored fields of the doc. */
