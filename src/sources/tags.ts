@@ -21,12 +21,22 @@ import {
  * source degrades to an empty group when it disappears.
  */
 
-/** Per-file tag list, invalidated by mtime — getAllTags allocates an array. */
-const fileTagCache = new Map<string, { mtime: number; tags: string[] }>();
+/**
+ * Per-file tag list, invalidated by mtime and path — getAllTags allocates an
+ * array. A WeakMap on the TFile, so renamed and deleted notes do not linger.
+ */
+const fileTagCache = new WeakMap<TFile, { mtime: number; path: string; tags: string[] }>();
+
+/** Drop a file's tags once its metadata was re-parsed (see main.ts). */
+export function invalidateFileTags(file: TFile): void {
+	fileTagCache.delete(file);
+}
 
 function tagsOf(app: App, file: TFile): string[] {
-	const cached = fileTagCache.get(file.path);
-	if (cached !== undefined && cached.mtime === file.stat.mtime) return cached.tags;
+	const cached = fileTagCache.get(file);
+	if (cached !== undefined && cached.mtime === file.stat.mtime && cached.path === file.path) {
+		return cached.tags;
+	}
 	const cache = app.metadataCache.getFileCache(file);
 	const tags =
 		cache === null
@@ -34,7 +44,7 @@ function tagsOf(app: App, file: TFile): string[] {
 			: (getAllTags(cache) ?? []).map((tag) =>
 					(tag.startsWith("#") ? tag.slice(1) : tag).toLowerCase(),
 				);
-	fileTagCache.set(file.path, { mtime: file.stat.mtime, tags });
+	fileTagCache.set(file, { mtime: file.stat.mtime, path: file.path, tags });
 	return tags;
 }
 

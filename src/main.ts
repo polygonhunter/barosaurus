@@ -19,10 +19,10 @@ import { bookmarksSource } from "./sources/bookmarks";
 import { commandsSource } from "./sources/commands";
 import { propertiesSource } from "./sources/properties";
 import { createSource } from "./sources/create";
-import { filesSource } from "./sources/files";
+import { filesSource, invalidateTitleTerms } from "./sources/files";
 import { foldersSource } from "./sources/folders";
 import { ghostSource } from "./sources/ghost";
-import { headingsSource } from "./sources/headings";
+import { headingsSource, invalidateHeadingRows } from "./sources/headings";
 import { helpSource } from "./sources/help";
 import { lineSource } from "./sources/line";
 import { fullTextSource } from "./sources/fulltext";
@@ -30,7 +30,7 @@ import { blocksSource } from "./sources/blocks";
 import { settingsTabsSource } from "./sources/settings-tabs";
 import type { Source, StreamingSource } from "./sources/source";
 import { tabsSource } from "./sources/tabs";
-import { tagsSource } from "./sources/tags";
+import { invalidateFileTags, tagsSource } from "./sources/tags";
 import {
 	BarosaurusSettingTab,
 	DEFAULT_SETTINGS,
@@ -143,6 +143,18 @@ export default class BarosaurusPlugin extends Plugin {
 				const pin = this.settings.pins.indexOf(fileItemId(oldPath));
 				if (pin >= 0) this.settings.pins[pin] = fileItemId(file.path);
 				this.saveDataSoon();
+			}),
+		);
+
+		// The per-file caches of the title, heading and tag sources are keyed
+		// on mtime, but the vault bumps the mtime before the metadata is
+		// re-parsed. Whatever was cached in between holds the OLD aliases,
+		// headings and tags under the NEW mtime — so drop it once parsed.
+		this.registerEvent(
+			this.app.metadataCache.on("changed", (file) => {
+				invalidateTitleTerms(file);
+				invalidateHeadingRows(file);
+				invalidateFileTags(file);
 			}),
 		);
 

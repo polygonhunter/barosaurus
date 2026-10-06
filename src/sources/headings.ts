@@ -28,8 +28,17 @@ interface SymbolRow {
 	term: string;
 }
 
-/** Per-file rows, invalidated by mtime — folding is the expensive part. */
-const rowCache = new Map<string, { mtime: number; rows: SymbolRow[] }>();
+/**
+ * Per-file rows, invalidated by mtime and path — folding is the expensive
+ * part. Keyed on the TFile (a WeakMap) rather than the path: a path-keyed map
+ * kept every renamed or deleted note's rows alive for the whole session.
+ */
+const rowCache = new WeakMap<TFile, { mtime: number; path: string; rows: SymbolRow[] }>();
+
+/** Drop a file's rows once its metadata was re-parsed (see main.ts). */
+export function invalidateHeadingRows(file: TFile): void {
+	rowCache.delete(file);
+}
 
 function clampLevel(level: number): 1 | 2 | 3 | 4 | 5 | 6 {
 	const rounded = Math.round(level);
@@ -39,8 +48,10 @@ function clampLevel(level: number): 1 | 2 | 3 | 4 | 5 | 6 {
 }
 
 function rowsFor(app: App, file: TFile): SymbolRow[] {
-	const cached = rowCache.get(file.path);
-	if (cached !== undefined && cached.mtime === file.stat.mtime) return cached.rows;
+	const cached = rowCache.get(file);
+	if (cached !== undefined && cached.mtime === file.stat.mtime && cached.path === file.path) {
+		return cached.rows;
+	}
 
 	const cache = app.metadataCache.getFileCache(file);
 	const rows: SymbolRow[] = [];
@@ -90,7 +101,7 @@ function rowsFor(app: App, file: TFile): SymbolRow[] {
 		});
 	}
 
-	rowCache.set(file.path, { mtime: file.stat.mtime, rows });
+	rowCache.set(file, { mtime: file.stat.mtime, path: file.path, rows });
 	return rows;
 }
 

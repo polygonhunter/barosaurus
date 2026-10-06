@@ -107,11 +107,18 @@ export function orderByMatch<T>(
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Folded terms per file, invalidated by mtime. Folding is regex work and this
- * runs on every keystroke over the whole vault; TFile identities are stable,
- * so a WeakMap keyed on the file needs no eviction.
+ * Folded terms per file, invalidated by mtime AND path. Folding is regex work
+ * and this runs on every keystroke over the whole vault; TFile identities are
+ * stable, so a WeakMap keyed on the file needs no eviction.
+ *
+ * The path check is not optional: a rename keeps the TFile object and the
+ * mtime, so an mtime-only check went on matching the OLD name and never the
+ * new one. Metadata edits are dropped through {@link invalidateFileCaches}.
  */
-const termCache = new WeakMap<TFile, { mtime: number; terms: string[]; aliases: string[] }>();
+const termCache = new WeakMap<
+	TFile,
+	{ mtime: number; path: string; terms: string[]; aliases: string[] }
+>();
 
 /**
  * Frontmatter aliases. `aliases:` may be a YAML list OR a single string, and
@@ -140,14 +147,25 @@ function aliasesOf(app: App, file: TFile): string[] {
 
 function entryFor(app: App, file: TFile): { terms: string[]; aliases: string[] } {
 	const cached = termCache.get(file);
-	if (cached !== undefined && cached.mtime === file.stat.mtime) return cached;
+	if (cached !== undefined && cached.mtime === file.stat.mtime && cached.path === file.path) {
+		return cached;
+	}
 	const aliases = aliasesOf(app, file);
 	const terms = [file.basename, ...aliases, file.path]
 		.map(fold)
 		.filter((term) => term.length > 0);
-	const fresh = { mtime: file.stat.mtime, terms, aliases };
+	const fresh = { mtime: file.stat.mtime, path: file.path, terms, aliases };
 	termCache.set(file, fresh);
 	return fresh;
+}
+
+/**
+ * Forget what the title cache holds for a file. Called on metadataCache
+ * 'changed': the vault bumps the mtime BEFORE the metadata is re-parsed, so a
+ * keystroke in between caches the old aliases under the new mtime.
+ */
+export function invalidateTitleTerms(file: TFile): void {
+	termCache.delete(file);
 }
 
 function tileFor(kind: ResultKind, path: string, extension: string): TileSpec {
