@@ -130,7 +130,10 @@ export default class BarosaurusPlugin extends Plugin {
 				const now = Date.now();
 				bumpFrecency(this.data.frecency, fileItemId(file.path), now);
 				pruneFrecency(this.data.frecency, now);
-				this.saveDataSoon();
+				// Every tab switch fires this. Rewriting data.json (and handing
+				// it to sync) every two seconds of browsing is not worth it for
+				// a ranking hint; it is flushed on unload like everything else.
+				this.saveFrecencySoon();
 			}),
 		);
 		this.registerEvent(
@@ -176,6 +179,7 @@ export default class BarosaurusPlugin extends Plugin {
 		// Frecency, history, pins and settings edited in the last two seconds
 		// are still sitting in the debounce. Cancelling by unloading lost them.
 		this.saveDataSoon.run();
+		this.saveFrecencySoon.run();
 		this.indexer?.stop();
 		this.indexer = null;
 		void this.ocr?.destroy();
@@ -396,6 +400,8 @@ export default class BarosaurusPlugin extends Plugin {
 	}
 
 	readonly saveDataSoon = debounce(() => void this.saveSettings(), 2_000, true);
+	/** Frecency from plain file opens: same file, much lazier schedule. */
+	private readonly saveFrecencySoon = debounce(() => void this.saveSettings(), 30_000, true);
 }
 
 // contextBoosts is re-exported so the modal can apply it without importing

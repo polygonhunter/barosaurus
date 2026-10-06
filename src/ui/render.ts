@@ -235,7 +235,12 @@ export function renderTile(row: HTMLElement, item: OmniItem, ctx: RowContext = {
 				break;
 			}
 			tile.addClass("mod-thumbnail");
-			tile.createEl("img", { attr: { src, alt: "" } });
+			// Lazy and async-decoded at the tile's own size: a folder of photos
+			// otherwise decodes every full-resolution original on the main
+			// thread while the list is being typed into.
+			tile.createEl("img", {
+				attr: { src, alt: "", loading: "lazy", decoding: "async", width: 56, height: 28 },
+			});
 			break;
 		}
 	}

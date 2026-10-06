@@ -308,7 +308,8 @@ export class PreviewPane {
 	private buildImage(el: HTMLElement, file: TFile): void {
 		const wrap = el.createDiv({ cls: "barosaurus-preview-image" });
 		wrap.createEl("img", {
-			attr: { src: this.app.vault.getResourcePath(file), alt: file.name },
+			// Decoded off the main thread; the pane must not stall the arrow keys.
+			attr: { src: this.app.vault.getResourcePath(file), alt: file.name, decoding: "async" },
 		});
 		wrap.createDiv({
 			cls: "barosaurus-preview-meta",
