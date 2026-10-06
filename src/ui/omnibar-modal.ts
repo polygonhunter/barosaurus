@@ -47,7 +47,7 @@ import {
 import type { ActionController } from "./action-panel";
 import type { BarPage, BarSurface } from "./picker";
 import { SelectionPill } from "./pill";
-import { PreviewPane, shouldMountPreview } from "./preview";
+import { PreviewPane, previewTargetFor, shouldMountPreview } from "./preview";
 import { renderRow } from "./render";
 import { forceUpdateSuggestions } from "./unsafe";
 
@@ -193,6 +193,10 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	private readonly statusEl: HTMLElement;
 	/** Null when the user switched the pane off, or on a phone. */
 	private readonly preview: PreviewPane | null;
+	/** The pane currently shows nothing. */
+	private previewEmpty = true;
+	/** Some row of the current list could be previewed — keep the column. */
+	private previewReserved = false;
 	private readonly selectionObserver: MutationObserver;
 
 	private stack: PageStackState = createStack();
@@ -279,9 +283,10 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 			const body = createDiv({ cls: "barosaurus-body" });
 			resultsParent.insertBefore(body, this.resultContainerEl);
 			body.appendChild(this.resultContainerEl);
-			this.preview = new PreviewPane(app, body.createDiv(), (empty) =>
-				this.modalEl.toggleClass("is-preview-empty", empty),
-			);
+			this.preview = new PreviewPane(app, body.createDiv(), (empty) => {
+				this.previewEmpty = empty;
+				this.applyPreviewLayout();
+			});
 		} else {
 			this.preview = null;
 		}
@@ -698,6 +703,12 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// EVERY row occupies a slot — group labels, the create row, ghosts. Set
 		// the limit to the total or SuggestModal slices whole groups away.
 		this.limit = grouped.limit;
+		// Once per LIST, not per selection: whether the preview column exists.
+		if (this.preview !== null) {
+			this.previewReserved = grouped.items.some((item) => previewTargetFor(item) !== null);
+			this.preview.setReserved(this.previewReserved);
+			this.applyPreviewLayout();
+		}
 		return grouped.rows;
 	}
 
@@ -897,6 +908,11 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		if (to < 0) return -1;
 		this.step(direction, rowDistance(at, to, direction, rows.length));
 		return this.rowEls().findIndex((el) => el.hasClass("is-selected"));
+	}
+
+	/** Full-width list only when the pane is empty AND nothing here could fill it. */
+	private applyPreviewLayout(): void {
+		this.modalEl.toggleClass("is-preview-empty", this.previewEmpty && !this.previewReserved);
 	}
 
 	/** Render the highlighted row in the pane, if there is one. */

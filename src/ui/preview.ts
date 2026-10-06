@@ -39,6 +39,11 @@ import { iconForResultKind } from "./icons";
 const MAX_PREVIEW_CHARS = 1800;
 /** Highlight at most this many matches (degenerate-query protection). */
 const MAX_MARKS = 40;
+/**
+ * A new target is rendered only once the selection rests this long. Holding ↓
+ * used to start a read and a full markdown render for every row it passed.
+ */
+const SHOW_DELAY_MS = 80;
 /** Per text node, so one pathological line cannot spin the splitter. */
 const MAX_SPLITS_PER_NODE = 20;
 /**
@@ -133,6 +138,14 @@ interface PdfCountTask {
 export class PreviewPane {
 	private component: Component | null = null;
 	private token = 0;
+	/**
+	 * `path|line|mtime` of what is on screen. Typing narrows the list without
+	 * moving the selection, and re-rendering the same note per keystroke only
+	 * to move the highlights was the pane's most common waste.
+	 */
+	private lastKey: string | null = null;
+	/** The rendered note body, so highlights can be redone in place. */
+	private noteEl: HTMLElement | null = null;
 	/** `path:mtime` → page count, so a second look at a PDF is free. */
 	private readonly pdfPages = new Map<string, number>();
 
@@ -156,6 +169,17 @@ export class PreviewPane {
 		this.token += 1;
 		this.component?.unload();
 		this.component = null;
+		this.lastKey = null;
+		this.noteEl = null;
+	}
+
+	/**
+	 * Keep the pane's column even while it shows nothing. The modal decides
+	 * this per result LIST: deciding it per selection made the list jump
+	 * between full and partial width as the arrow keys passed a command row.
+	 */
+	setReserved(reserved: boolean): void {
+		this.el.toggleClass("is-reserved", reserved);
 	}
 
 	clear(): void {
@@ -182,6 +206,20 @@ export class PreviewPane {
 			this.clear();
 			return;
 		}
+
+		// Already on screen: only the highlights can have changed.
+		const key = `${target.path}|${target.line ?? ""}|${file.stat.mtime}`;
+		if (key === this.lastKey) {
+			if (this.noteEl !== null) {
+				unmarkMatches(this.noteEl);
+				markMatches(this.noteEl, queryWords);
+			}
+			return;
+		}
+
+		// Let the selection come to rest before reading and rendering.
+		await new Promise((resolve) => window.setTimeout(resolve, SHOW_DELAY_MS));
+		if (token !== this.token) return;
 
 		// Built detached, swapped in only if still current. Created from THIS
 		// element's document so a popout window's preview belongs to the popout.
@@ -226,6 +264,8 @@ export class PreviewPane {
 		this.onEmptyChange?.(false);
 		while (next.firstChild !== null) this.el.appendChild(next.firstChild);
 		this.el.createDiv({ cls: "barosaurus-preview-path", text: target.path });
+		this.lastKey = key;
+		this.noteEl = this.el.querySelector<HTMLElement>(".barosaurus-preview-note");
 
 		// Cheap-enough facts that need their own read land afterwards, still
 		// guarded by the token so a stale answer is dropped rather than shown.
@@ -428,6 +468,19 @@ function markMatches(root: HTMLElement, queryWords: readonly string[]): void {
 			current = rest;
 		}
 	}
+}
+
+/** Undo markMatches: unwrap every mark and re-join the split text nodes. */
+function unmarkMatches(root: HTMLElement): void {
+	const parents = new Set<Node>();
+	for (const mark of Array.from(root.querySelectorAll("mark.barosaurus-mark"))) {
+		const parent = mark.parentNode;
+		if (parent === null) continue;
+		while (mark.firstChild !== null) parent.insertBefore(mark.firstChild, mark);
+		parent.removeChild(mark);
+		parents.add(parent);
+	}
+	for (const parent of parents) parent.normalize();
 }
 
 // ------------------------------------------------------------------ facts

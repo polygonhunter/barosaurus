@@ -452,7 +452,7 @@
 /* Nothing worth showing — a command, a tag, a note that does not exist yet.
    The pane leaves entirely and the list takes the width back, rather than
    sitting there as an empty column. */
-.barosaurus-preview.is-empty {
+.barosaurus-preview.is-empty:not(.is-reserved) {
 	display: none;
 }
 
