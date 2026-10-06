@@ -42,6 +42,26 @@ export function isPathExcluded(path: string, folders: readonly string[]): boolea
 }
 
 /**
+ * Turn what the user typed into the exclusion textarea into vault paths:
+ * one per line, trimmed, Windows backslashes turned into slashes, leading and
+ * trailing slashes dropped, empties and duplicates removed. "\\Archive\\2019\\"
+ * pasted from Explorer and "/templates" both mean a vault folder — and both
+ * matched nothing before, since vault paths never start with a slash.
+ */
+export function parseExcludedFolders(raw: string): string[] {
+	const out: string[] = [];
+	for (const line of raw.split(/\r?\n/)) {
+		const folder = line
+			.trim()
+			.replace(/\\/g, "/")
+			.replace(/\/{2,}/g, "/")
+			.replace(/^\/+|\/+$/g, "");
+		if (folder.length > 0 && !out.includes(folder)) out.push(folder);
+	}
+	return out;
+}
+
+/**
  * The per-keystroke shape of `isPathExcluded`: normalize the list ONCE, then
  * test many paths against it.
  *

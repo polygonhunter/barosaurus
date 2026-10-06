@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { folderOf, isPathExcluded, normalizeExcludedFolders, pathExcluder } from "../src/core/paths";
+import {
+	folderOf,
+	isPathExcluded,
+	normalizeExcludedFolders,
+	parseExcludedFolders,
+	pathExcluder,
+} from "../src/core/paths";
 
 describe("isPathExcluded", () => {
 	it("matches files inside the folder", () => {
@@ -37,6 +43,14 @@ describe("isPathExcluded", () => {
 
 	it("excludes nothing when the list is empty", () => {
 		expect(isPathExcluded("templates/daily.md", [])).toBe(false);
+	});
+});
+
+describe("parseExcludedFolders", () => {
+	it("normalizes what people paste into the textarea", () => {
+		expect(
+			parseExcludedFolders("templates\n /Archive/2019/ \r\n\\Work\\Old\\\n\n templates "),
+		).toEqual(["templates", "Archive/2019", "Work/Old"]);
 	});
 });
 

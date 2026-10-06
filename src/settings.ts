@@ -1,5 +1,6 @@
-import { Platform, PluginSettingTab, Setting, type App, type Plugin } from "obsidian";
+import { debounce, Platform, PluginSettingTab, Setting, type App, type Plugin } from "obsidian";
 import type { UserSnippet } from "./core/blocks";
+import { parseExcludedFolders } from "./core/paths";
 import type { ColorMode } from "./core/style";
 import type { OcrController } from "./ocr/pipeline";
 import { capabilities, missingCapabilities, openSettingsTab } from "./ui/unsafe";
@@ -103,6 +104,13 @@ export interface SettingsHost extends Plugin {
 	onSettingsChanged(): void;
 	/** Drop the index and rebuild it from scratch. */
 	rebuildIndex(): Promise<void>;
+	/**
+	 * Debounced save of data.json, for settings that need no re-apply (date
+	 * format, snippets). Optional: absent, the tab saves directly instead.
+	 */
+	saveDataSoon?: () => void;
+	/** Add or remove the ribbon icon to match `showRibbonIcon`, right now. */
+	applyRibbonIcon?: () => void;
 	/** Open the contact form with version and platform prefilled. */
 	openSupport(): void;
 	/**
@@ -135,6 +143,17 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 	private async persist(): Promise<void> {
 		await this.host.saveSettings();
 		this.host.onSettingsChanged();
+	}
+
+	/**
+	 * Save without re-applying anything. The date format and the snippets are
+	 * read when used; running persist() per keystroke re-diffed the whole
+	 * vault against the index for every letter typed into them.
+	 */
+	private persistQuietly(): void {
+		const soon = this.host.saveDataSoon;
+		if (soon) soon();
+		else void this.host.saveSettings();
 	}
 
 	display(): void {
@@ -214,6 +233,9 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 			.addToggle((toggle) =>
 				toggle.setValue(settings.showRibbonIcon).onChange(async (value) => {
 					settings.showRibbonIcon = value;
+					// Takes effect now, not after a restart the toggle never
+					// mentioned.
+					this.host.applyRibbonIcon?.();
 					await this.persist();
 				}),
 			);
@@ -397,9 +419,9 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder("YYYY-MM-DD")
 					.setValue(settings.dateFormat)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						settings.dateFormat = value.trim() || "YYYY-MM-DD";
-						await this.persist();
+						this.persistQuietly();
 					}),
 			);
 
@@ -416,20 +438,20 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 					text
 						.setPlaceholder("Name")
 						.setValue(snippet.name)
-						.onChange(async (value) => {
+						.onChange((value) => {
 							const entry = settings.snippets[index];
 							if (entry) entry.name = value;
-							await this.persist();
+							this.persistQuietly();
 						}),
 				)
 				.addText((text) =>
 					text
 						.setPlaceholder("Template with {cursor}")
 						.setValue(snippet.template)
-						.onChange(async (value) => {
+						.onChange((value) => {
 							const entry = settings.snippets[index];
 							if (entry) entry.template = value;
-							await this.persist();
+							this.persistQuietly();
 						}),
 				)
 				.addExtraButton((button) =>
@@ -465,18 +487,33 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 				"One folder per line. Everything inside is skipped, including subfolders. Matching respects " +
 					"folder boundaries, so “templates” does not also exclude “templates-archive”.",
 			)
-			.addTextArea((area) =>
+			.addTextArea((area) => {
+				// Applied when the user pauses or leaves the field — not per
+				// keystroke. Every apply re-diffs the vault, and the half-typed
+				// "arch" on the way to "archive" would drop and re-add whatever
+				// folder happened to be called that.
+				let pending: string | null = null;
+				const apply = (): void => {
+					if (pending === null) return;
+					const next = parseExcludedFolders(pending);
+					pending = null;
+					if (next.join("\n") === settings.excludedFolders.join("\n")) return;
+					settings.excludedFolders = next;
+					void this.persist();
+				};
+				const applySoon = debounce(apply, 800, true);
 				area
 					.setPlaceholder("templates\narchive/2019")
 					.setValue(settings.excludedFolders.join("\n"))
-					.onChange(async (value) => {
-						settings.excludedFolders = value
-							.split("\n")
-							.map((line) => line.trim())
-							.filter((line) => line.length > 0);
-						await this.persist();
-					}),
-			);
+					.onChange((value) => {
+						pending = value;
+						applySoon();
+					});
+				area.inputEl.addEventListener("blur", () => {
+					applySoon.cancel();
+					apply();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName("Rebuild the index")

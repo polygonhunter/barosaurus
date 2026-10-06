@@ -88,6 +88,7 @@ export default class BarosaurusPlugin extends Plugin {
 	private readonly engine = new SearchEngine(DEFAULT_WEIGHTS);
 	private indexer: Indexer | null = null;
 	private lastShiftAt = 0;
+	private ribbonEl: HTMLElement | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -112,11 +113,7 @@ export default class BarosaurusPlugin extends Plugin {
 		// "Barosaurus: Open". Naming it "Open Barosaurus" would stutter.
 		this.addCommand({ id: "open", name: "Open", callback: () => this.openBar() });
 
-		if (this.settings.showRibbonIcon) {
-			// Tappable entry point — on phones this lands in the side menu, so
-			// the bar is reachable without configuring anything.
-			this.addRibbonIcon("chevrons-right", "Barosaurus: Open", () => this.openBar());
-		}
+		this.applyRibbonIcon();
 
 		this.addSettingTab(new BarosaurusSettingTab(this.app, this));
 
@@ -325,6 +322,23 @@ export default class BarosaurusPlugin extends Plugin {
 	};
 
 	// ------------------------------------------------------------- settings
+
+	/**
+	 * Show or remove the ribbon icon to match the setting — called at load and
+	 * straight from the toggle, so switching it needs no restart. Tappable
+	 * entry point: on phones it lands in the side menu, so the bar is reachable
+	 * without configuring anything.
+	 */
+	readonly applyRibbonIcon = (): void => {
+		if (this.settings.showRibbonIcon && this.ribbonEl === null) {
+			this.ribbonEl = this.addRibbonIcon("chevrons-right", "Barosaurus: Open", () =>
+				this.openBar(),
+			);
+		} else if (!this.settings.showRibbonIcon && this.ribbonEl !== null) {
+			this.ribbonEl.remove();
+			this.ribbonEl = null;
+		}
+	};
 
 	onSettingsChanged(): void {
 		this.indexer?.onSettingsChanged();
