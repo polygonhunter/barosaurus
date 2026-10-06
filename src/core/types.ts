@@ -129,6 +129,11 @@ export type OmniItem =
 			mtime: number;
 			/** Line to scroll to, for a fulltext hit. */
 			line?: number;
+			/**
+			 * The folded query words a full-text hit matched — enough to find
+			 * the line again when the row is opened (see core/excerpt.ts).
+			 */
+			matchWords?: string[];
 	  })
 	| (OmniItemBase & {
 			kind: "heading";

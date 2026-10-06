@@ -431,3 +431,15 @@ describe("fullTextPending", () => {
 		).toBe(false);
 	});
 });
+
+describe("fullTextSource, snippets", () => {
+	it("shows the matching line of a top hit and remembers where it is", async () => {
+		const app = fakeApp({ "notes/standup.md": "# Standup\n\n- Discussed the meeting agenda\n" });
+		const ctx = contextFor("meeting", { index: fakeIndex([hit("notes/standup.md")]), app });
+		const [candidate] = await run(ctx);
+		const item = candidate?.item as OmniItem & { kind: "file" };
+		expect(item.subtitle).toBe("Discussed the meeting agenda");
+		expect(item.line).toBe(2);
+		expect(item.matchWords).toEqual(["meeting"]);
+	});
+});

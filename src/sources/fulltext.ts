@@ -1,5 +1,6 @@
+import { findMatchLine, snippetAt } from "../core/excerpt";
 import type { SearchHit } from "../core/index-types";
-import { fold } from "../core/normalize";
+import { fold, foldedWords } from "../core/normalize";
 import { folderOf } from "../core/paths";
 import { containsPhrase, matchesTag, type ParsedQuery } from "../core/query";
 import type { Candidate, OmniItem, ResultKind, TileSpec } from "../core/types";
@@ -74,6 +75,13 @@ const PHRASE_READ_CAP = 12;
  * it was never indexed and could not have produced the hit anyway.
  */
 const MAX_PHRASE_BODY = 300_000;
+
+/**
+ * How many of the top rows get a snippet of the matching line as subtitle.
+ * Each one is a `cachedRead`; five is what fits on a phone screen, where there
+ * is no preview pane to show the match instead.
+ */
+const SNIPPET_ROWS = 5;
 
 /** The `kind: "file"` member of the OmniItem union, which is what we emit. */
 type FileItem = Extract<OmniItem, { kind: "file" }>;
@@ -203,17 +211,18 @@ function tileFor(hit: SearchHit): TileSpec {
 /**
  * The row.
  *
- * The subtitle says WHERE, because the row cannot say what: the matching text
- * is in the body, and the body is indexed but not stored, so a real snippet
- * would cost one file read per row per keystroke. A link doc shows its URL
- * (which IS the matched text), everything else shows its folder — the same
- * subtitle the files source uses, so the two lists read alike.
+ * The subtitle says WHERE: the matching text is in the body, and the body is
+ * indexed but not stored, so a snippet costs a file read. A link doc shows its
+ * URL (which IS the matched text), everything else its folder — the same
+ * subtitle the files source uses. Only the top rows pay for a read and get the
+ * matching line instead (see addSnippets), after the debounce in the modal, so
+ * it is a handful of reads per pause in typing, not per keystroke.
  *
  * No SearchResult is attached. The offsets we could compute cheaply would be
  * offsets into FOLDED text (ß→ss and NFD both change the length), and the
  * modal's own fallback highlighter runs against the real title and is correct.
  */
-function itemFor(hit: SearchHit): OmniItem {
+function itemFor(hit: SearchHit, words: readonly string[]): FileItem {
 	const item: FileItem = {
 		id: fullTextItemId(hit.path),
 		kind: "file",
@@ -235,7 +244,43 @@ function itemFor(hit: SearchHit): OmniItem {
 	// A link doc knows the line it sits on, which is what makes "open at the
 	// place it matched" possible for the one hit kind that can offer it.
 	if (hit.line !== undefined) item.line = hit.line;
+	if (words.length > 0 && hit.kind !== "link") item.matchWords = [...words];
 	return item;
+}
+
+/**
+ * Replace the folder subtitle of the top rows with the line that matched, and
+ * remember that line so opening (and the preview) land on it. Notes only — the
+ * text of an attachment lives inside the index alone. Stops the moment a newer
+ * keystroke owns the list.
+ */
+async function addSnippets(
+	ctx: SourceContext,
+	items: FileItem[],
+	words: readonly string[],
+	signal: AbortSignal,
+): Promise<void> {
+	if (words.length === 0) return;
+	let done = 0;
+	for (const item of items) {
+		if (done >= SNIPPET_ROWS || signal.aborted) return;
+		if (item.resultKind !== "note" || item.line !== undefined) continue;
+		const file = ctx.app.vault.getFileByPath(item.path);
+		if (file === null) continue;
+		done += 1;
+		let body: string;
+		try {
+			body = (await ctx.app.vault.cachedRead(file)).slice(0, MAX_PHRASE_BODY);
+		} catch {
+			continue; // a snippet is a nicety; the row stands without one
+		}
+		if (signal.aborted) return;
+		const line = findMatchLine(body, words);
+		if (line === null) continue;
+		item.line = line;
+		const snippet = snippetAt(body, line, words);
+		if (snippet.length > 0) item.subtitle = snippet;
+	}
 }
 
 // -------------------------------------------------------------------- source
@@ -305,8 +350,12 @@ export const fullTextSource: StreamingSource = {
 			query.phrases.length === 0 ? kept : await verifyPhrases(ctx, kept, signal, limit);
 		if (signal.aborted) return [];
 
+		const words = foldedWords(query.text);
+		const items = verified.slice(0, limit).map((hit) => itemFor(hit, words));
+		await addSnippets(ctx, items, words, signal);
+		if (signal.aborted) return [];
 		// Rank normalization, never score normalization — see the header.
-		return candidatesFromOrdered(verified.slice(0, limit).map(itemFor));
+		return candidatesFromOrdered(items);
 	},
 };
 

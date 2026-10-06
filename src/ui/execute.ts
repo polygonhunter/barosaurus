@@ -18,6 +18,7 @@ import {
 	type SupportInfo,
 } from "../core/catalog";
 import { handlesEditing, planEdit, type EditingSettings } from "../core/editing";
+import { findMatchLine } from "../core/excerpt";
 import type { OmniItem } from "../core/types";
 import { createNotePath, invalidNameReason } from "../sources/create";
 import { GOTO_LINE_PREFIX } from "../sources/line";
@@ -147,7 +148,7 @@ export async function choose(
 				break;
 			}
 			case "file":
-				await openPath(app, item.path, paneType, item.line);
+				await openPath(app, item.path, paneType, item.line ?? (await matchLineOf(app, item)));
 				break;
 			case "heading":
 			case "block":
@@ -886,6 +887,26 @@ export function subpathOf(item: OmniItem): string | undefined {
 	}
 	if (item.kind === "block") return `#^${item.blockId}`;
 	return undefined;
+}
+
+/**
+ * Where a full-text hit matched, for hits that did not get a snippet (beyond
+ * the top rows). One cachedRead on open — "found in text" should open AT the
+ * text, not at the top of a long note.
+ */
+async function matchLineOf(app: App, item: OmniItem): Promise<number | undefined> {
+	if (item.kind !== "file" || item.source !== "fulltext" || item.resultKind !== "note") {
+		return undefined;
+	}
+	const words = item.matchWords ?? [];
+	if (words.length === 0) return undefined;
+	const file = app.vault.getFileByPath(item.path);
+	if (file === null) return undefined;
+	try {
+		return findMatchLine(await app.vault.cachedRead(file), words) ?? undefined;
+	} catch {
+		return undefined; // open at the top rather than not at all
+	}
 }
 
 function pathOf(item: OmniItem): string | null {

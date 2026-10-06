@@ -7,6 +7,7 @@ import {
 	type App,
 	type TFile,
 } from "obsidian";
+import { excerptAround } from "../core/excerpt";
 import type { OmniItem, ResultKind } from "../core/types";
 import { iconForResultKind } from "./icons";
 
@@ -35,8 +36,6 @@ import { iconForResultKind } from "./icons";
  * one, because there is no room for it.
  */
 
-/** Preview body cap — enough context, never the whole 300 KB note. */
-const MAX_PREVIEW_CHARS = 1800;
 /** Highlight at most this many matches (degenerate-query protection). */
 const MAX_MARKS = 40;
 /**
@@ -384,41 +383,7 @@ export function stripFrontmatter(text: string): { body: string; lines: number } 
 	return { body: text.slice(match[0].length), lines };
 }
 
-/**
- * Window the raw markdown around the interesting spot, cut on line borders so
- * a fence or a list never starts halfway through.
- *
- * The line wins over the query words when there is one: a heading result knows
- * exactly where it lives, and guessing from the query would land the excerpt
- * on some other occurrence of the same word.
- */
-export function excerptAround(
-	body: string,
-	queryWords: readonly string[],
-	line?: number,
-): string {
-	if (body.length <= MAX_PREVIEW_CHARS) return body;
-
-	let focus = -1;
-	if (line !== undefined && line > 0) {
-		const lines = body.split("\n");
-		if (line < lines.length) {
-			focus = lines.slice(0, line).reduce((sum, text) => sum + text.length + 1, 0);
-		}
-	}
-	if (focus === -1) {
-		const lower = body.toLowerCase();
-		for (const word of queryWords) {
-			const index = lower.indexOf(word.toLowerCase());
-			if (index !== -1 && (focus === -1 || index < focus)) focus = index;
-		}
-	}
-	if (focus === -1) return body.slice(0, MAX_PREVIEW_CHARS);
-
-	const start = body.lastIndexOf("\n", Math.max(0, focus - MAX_PREVIEW_CHARS / 3));
-	const end = body.indexOf("\n", focus + MAX_PREVIEW_CHARS / 2);
-	return body.slice(start === -1 ? 0 : start + 1, end === -1 ? body.length : end);
-}
+export { excerptAround };
 
 /**
  * Wrap query-word occurrences in `<mark>` across the rendered DOM.

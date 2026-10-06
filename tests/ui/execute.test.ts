@@ -232,3 +232,39 @@ describe("the delete confirmation", () => {
 		expect(trashed).toEqual(["Inbox/Old.md"]);
 	});
 });
+
+describe("opening a full-text hit", () => {
+	it("opens the note at the line that matched", async () => {
+		const opened: unknown[] = [];
+		const file = Object.assign(new TFile(), { path: "notes/long.md" });
+		const app = {
+			vault: {
+				getFileByPath: () => file,
+				cachedRead: () => Promise.resolve("intro\n\nfiller\nthe budget figures\n"),
+			},
+			workspace: {
+				getLeaf: () => ({
+					openFile: (_file: TFile, state: unknown) => {
+						opened.push(state);
+						return Promise.resolve();
+					},
+				}),
+			},
+		} as unknown as App;
+		const item = {
+			kind: "file",
+			source: "fulltext",
+			group: "fulltext",
+			id: "fulltext:notes/long.md",
+			title: "long",
+			aliases: [],
+			tile: { kind: "icon", icon: "file-text" },
+			path: "notes/long.md",
+			resultKind: "note",
+			mtime: 0,
+			matchWords: ["budget"],
+		} as unknown as OmniItem;
+		await choose({ app, remember: () => undefined }, item, false);
+		expect(opened).toEqual([{ eState: { line: 3 } }]);
+	});
+});
