@@ -1,4 +1,5 @@
 import { TFolder, type App } from "obsidian";
+import { collectPropertyValues } from "../core/frontmatter";
 import { fold } from "../core/normalize";
 import {
 	ALIGNMENT_LABELS,
@@ -247,6 +248,39 @@ function propertyRows(entries: Array<Scorable<OmniItem>>, query: string): OmniIt
 	return rows;
 }
 
+// --------------------------------------------------------- property values
+
+/**
+ * The values `key` already has anywhere in the vault, most used first — so
+ * "status" offers "draft", "review", "done" instead of a blank field, and the
+ * vault does not grow "Done", "done" and "done " side by side.
+ */
+function propertyValueEntries(app: App, key: string): Array<Scorable<OmniItem>> {
+	const frontmatters = app.vault
+		.getMarkdownFiles()
+		.map((file) => app.metadataCache.getFileCache(file)?.frontmatter);
+	return collectPropertyValues(frontmatters, key).map(({ value, count }) => ({
+		value: valueRow(
+			value,
+			value,
+			{ kind: "icon", icon: "list" },
+			`${count} ${count === 1 ? "note" : "notes"}`,
+		),
+		terms: [fold(value)].filter((term) => term.length > 0),
+	}));
+}
+
+function propertyValueRows(entries: Array<Scorable<OmniItem>>, query: string): OmniItem[] {
+	const rows = ordered(entries, query, PICKER_LIMIT);
+	// Anything typed is a valid value, existing or not — always offered first
+	// unless it is exactly one that is already listed.
+	const typed = query.trim();
+	if (typed.length > 0 && !rows.some((row) => valueOf(row) === typed)) {
+		rows.unshift(valueRow(typed, typed, { kind: "icon", icon: "corner-down-left" }, "New value"));
+	}
+	return rows;
+}
+
 // -------------------------------------------------------------- templates
 
 /**
@@ -390,8 +424,25 @@ function commandEntries(app: App): Array<Scorable<OmniItem>> {
 // ------------------------------------------------------------------ build
 
 /** Which page an argument asks for. Exhaustive over `ArgumentPicker`. */
-export function pageFor(picker: ArgumentPicker, app: App): BarPage {
+export function pageFor(
+	picker: ArgumentPicker,
+	app: App,
+	collected: readonly string[] = [],
+): BarPage {
 	switch (picker.kind) {
+		case "propertyValue": {
+			// The property is the argument collected just before this one.
+			const key = collected[collected.length - 1] ?? "";
+			const entries = lazy(() => (key.length === 0 ? [] : propertyValueEntries(app, key)));
+			return {
+				kind: "propertyValue",
+				label: picker.prompt,
+				placeholder: "Pick or type a value…",
+				emptyText: "Type a value.",
+				rows: (query) => propertyValueRows(entries(), query),
+				choose: commitRow,
+			};
+		}
 		case "folder":
 			return folderPage(picker.prompt, app);
 		case "tag": {

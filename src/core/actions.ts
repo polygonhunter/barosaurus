@@ -147,7 +147,7 @@ export const ACTIONS: readonly ActionDef[] = [
 		icon: "list-plus",
 		arguments: [
 			{ kind: "property", prompt: "Property" },
-			{ kind: "text", prompt: "Value", placeholder: "Value" },
+			{ kind: "propertyValue", prompt: "Value" },
 		],
 		appliesTo: (item) => item.kind === "file",
 	},

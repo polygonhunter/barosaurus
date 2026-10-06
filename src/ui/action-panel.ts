@@ -9,6 +9,7 @@ import {
 	nextArgument,
 } from "../core/actions";
 import { actionsFor, NONE_AVAILABLE, type PluginCapabilities } from "../core/availability";
+import { formatPropertyValue } from "../core/frontmatter";
 import { pushHistory } from "../core/history";
 import { fold } from "../core/normalize";
 import { fileItemId, type ActionDef, type BarContext, type OmniItem } from "../core/types";
@@ -189,7 +190,8 @@ export function createActionController(host: ActionHost): ActionController {
 			return;
 		}
 		const override = PAGE_OVERRIDES[action.id];
-		const page = override === undefined ? pageFor(picker, app) : override(picker.prompt, app);
+		const page =
+			override === undefined ? pageFor(picker, app, collected) : override(picker.prompt, app);
 		// Every picker level reports back here, so a three-argument action needs
 		// no state beyond the page stack it is already pushing onto.
 		bar.pushPage(
@@ -200,7 +202,7 @@ export function createActionController(host: ActionHost): ActionController {
 					advance(surface, action, item);
 				},
 			},
-			initialQueryFor(action, item, collected.length),
+			initialQueryFor(app, action, item, collected),
 		);
 	};
 
@@ -307,10 +309,22 @@ export function createActionController(host: ActionHost): ActionController {
 /**
  * What the input starts with on a picker level. Rename prefills the current
  * name so the common case — change two letters — is two keystrokes rather than
- * retyping the whole thing. Only ever the FIRST argument: a prefill on a later
- * level would be answering a question the user has not been asked yet.
+ * retyping the whole thing. "Set property" prefills the field's CURRENT value
+ * on the value step, once the key is known; a later level is never prefilled
+ * with anything else, because it would answer a question not yet asked.
  */
-function initialQueryFor(action: ActionDef, item: OmniItem, index: number): string {
-	if (index !== 0 || argumentCount(action) === 0) return "";
-	return action.id === "rename" ? item.title : "";
+function initialQueryFor(
+	app: App,
+	action: ActionDef,
+	item: OmniItem,
+	collected: readonly string[],
+): string {
+	if (argumentCount(action) === 0) return "";
+	if (collected.length === 0) return action.id === "rename" ? item.title : "";
+	if (action.id === "set-property" && collected.length === 1 && item.kind === "file") {
+		const file = app.vault.getFileByPath(item.path);
+		const frontmatter = file === null ? null : app.metadataCache.getFileCache(file)?.frontmatter;
+		return formatPropertyValue(frontmatter?.[collected[0] ?? ""]);
+	}
+	return "";
 }

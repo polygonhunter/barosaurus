@@ -62,6 +62,29 @@ export function parsePropertyAction(
  */
 const COMMON_KEYS = ["author", "status", "tags", "aliases", "date", "due", "project", "type"];
 
+/** Cache bookkeeping, not a user property. */
+const NON_PROPERTY_KEYS: ReadonlySet<string> = new Set(["position"]);
+
+/**
+ * The keys the active note already has, ahead of the common ones. "Set
+ * priority…" on a note that has a priority field is the obvious row to offer;
+ * a fixed shortlist never could. One metadata-cache lookup, no vault scan.
+ */
+function keysFor(ctx: SourceContext, path: string): string[] {
+	const keys: string[] = [];
+	try {
+		const file = ctx.app.vault.getFileByPath(path);
+		const frontmatter = file === null ? null : ctx.app.metadataCache.getFileCache(file)?.frontmatter;
+		for (const key of Object.keys(frontmatter ?? {})) {
+			if (!NON_PROPERTY_KEYS.has(key)) keys.push(key);
+		}
+	} catch {
+		// No metadata available (a host without a vault): the shortlist alone.
+	}
+	for (const key of COMMON_KEYS) if (!keys.includes(key)) keys.push(key);
+	return keys;
+}
+
 export const propertiesSource: Source = {
 	id: "properties",
 
@@ -82,7 +105,7 @@ export const propertiesSource: Source = {
 		const rows: OmniItem[] = [];
 
 		// A named key first, when the query is clearly reaching for one.
-		for (const key of COMMON_KEYS) {
+		for (const key of keysFor(ctx, path)) {
 			if (!fold(key).startsWith(query)) continue;
 			rows.push({
 				id: `${SET_PROPERTY_PREFIX}${path}${SEP}${key}`,

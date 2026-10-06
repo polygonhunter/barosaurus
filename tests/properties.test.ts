@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
+import {
+	collectPropertyValues,
+	coercePropertyValue,
+	formatPropertyValue,
+} from "../src/core/frontmatter";
 import { parseQuery } from "../src/core/query";
 import { EMPTY_CONTEXT, type BarContext } from "../src/core/types";
 import {
@@ -130,5 +135,75 @@ describe("the id carries the target", () => {
 		expect(parsePropertyAction("goto-line:42")).toBeNull();
 		expect(parsePropertyAction("set-property")).toBeNull();
 		expect(parsePropertyAction(SET_PROPERTY_PREFIX)).toBeNull();
+	});
+});
+
+describe("keys of the note you are in", () => {
+	it("offers the active note's own keys ahead of the shortlist", () => {
+		const app = {
+			vault: { getFileByPath: () => ({ path: NOTE }) },
+			metadataCache: {
+				getFileCache: () => ({ frontmatter: { priority: 2, position: {}, author: "x" } }),
+			},
+		} as unknown as App;
+		const titles = (query: string) =>
+			propertiesSource
+				.getCandidates({ ...ctxWith(query, NOTE), app })
+				.map((candidate) => candidate.item.title);
+		expect(titles("prio")).toEqual(["Set priority…"]);
+		expect(titles("pos")).toEqual([]);
+		// No duplicate when the note's key is also a common one.
+		expect(titles("author").filter((title) => title === "Set author…")).toHaveLength(1);
+	});
+});
+
+describe("coercePropertyValue keeps the field's type", () => {
+	it("keeps lists as lists", () => {
+		expect(coercePropertyValue(["a"], "a, b ,, c")).toEqual(["a", "b", "c"]);
+	});
+
+	it("keeps checkboxes as booleans", () => {
+		expect(coercePropertyValue(false, "TRUE")).toBe(true);
+		expect(coercePropertyValue(true, "false")).toBe(false);
+		expect(coercePropertyValue(true, "maybe")).toBe("maybe");
+	});
+
+	it("keeps numbers as numbers", () => {
+		expect(coercePropertyValue(1, " 2.5 ")).toBe(2.5);
+		expect(coercePropertyValue(1, "high")).toBe("high");
+		expect(coercePropertyValue(1, "")).toBe("");
+	});
+
+	it("writes text for new and text fields", () => {
+		expect(coercePropertyValue(undefined, " 42 ")).toBe("42");
+		expect(coercePropertyValue("draft", "true")).toBe("true");
+	});
+});
+
+describe("existing values of a property", () => {
+	it("counts distinct values across notes, list entries one by one", () => {
+		const values = collectPropertyValues(
+			[
+				{ status: "draft" },
+				{ status: "done" },
+				{ status: "done" },
+				{ status: ["done", "review", "done"] },
+				{ other: "x" },
+				null,
+			],
+			"status",
+		);
+		expect(values).toEqual([
+			{ value: "done", count: 3 },
+			{ value: "draft", count: 1 },
+			{ value: "review", count: 1 },
+		]);
+	});
+
+	it("formats values the way a user would type them", () => {
+		expect(formatPropertyValue(["a", "b"])).toBe("a, b");
+		expect(formatPropertyValue(false)).toBe("false");
+		expect(formatPropertyValue({ nested: 1 })).toBe("");
+		expect(formatPropertyValue(undefined)).toBe("");
 	});
 });

@@ -297,6 +297,8 @@ export type ArgumentPicker =
 	| { kind: "folder"; prompt: string }
 	| { kind: "tag"; prompt: string }
 	| { kind: "property"; prompt: string }
+	/** A value for the property collected one step earlier, with the vault's existing values. */
+	| { kind: "propertyValue"; prompt: string }
 	| { kind: "template"; prompt: string }
 	| { kind: "color"; prompt: string }
 	| { kind: "align"; prompt: string }

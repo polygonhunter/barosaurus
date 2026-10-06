@@ -19,6 +19,7 @@ import {
 } from "../core/catalog";
 import { handlesEditing, planEdit, type EditingSettings } from "../core/editing";
 import { findMatchLine } from "../core/excerpt";
+import { coercePropertyValue } from "../core/frontmatter";
 import type { OmniItem } from "../core/types";
 import { createNotePath, invalidNameReason } from "../sources/create";
 import { GOTO_LINE_PREFIX } from "../sources/line";
@@ -443,10 +444,9 @@ async function addTag(app: App, item: OmniItem, rawTag: string): Promise<void> {
  * literal text "a, b" would quietly change the note's meaning, and a property
  * editor that corrupts the shape of what it edits is worse than none.
  *
- * Typed properties (number, checkbox, date) are deliberately out of scope here:
- * the type lives in `app.metadataTypeManager`, which is undocumented and would
- * belong behind src/ui/unsafe.ts. Obsidian coerces a string to the declared
- * type on read, so a text write is correct, just not clever.
+ * The same goes for checkboxes and numbers: the CURRENT value's type is kept
+ * (coercePropertyValue). The declared type lives in `app.metadataTypeManager`,
+ * which is undocumented, so a field that does not exist yet is written as text.
  */
 async function setProperty(
 	app: App,
@@ -458,14 +458,10 @@ async function setProperty(
 	if (file === null) return;
 	const key = rawKey.trim();
 	if (key.length === 0) return;
-	const value = rawValue.trim();
 	await app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
-		frontmatter[key] = Array.isArray(frontmatter[key])
-			? value
-					.split(",")
-					.map((entry) => entry.trim())
-					.filter((entry) => entry.length > 0)
-			: value;
+		// Lists stay lists, checkboxes stay booleans, numbers stay numbers —
+		// see core/frontmatter.ts.
+		frontmatter[key] = coercePropertyValue(frontmatter[key], rawValue);
 	});
 	new Notice(`Set ${key}`);
 }
