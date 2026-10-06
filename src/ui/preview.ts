@@ -123,6 +123,13 @@ function extensionOf(path: string): string {
 	return dot === -1 ? "" : path.slice(dot + 1).toLowerCase();
 }
 
+/** The slice of pdf.js' loading task the page count needs. */
+interface PdfCountTask {
+	promise: Promise<{ numPages: number }>;
+	/** Destroys the loading task AND the document it produced. */
+	destroy(): Promise<void>;
+}
+
 export class PreviewPane {
 	private component: Component | null = null;
 	private token = 0;
@@ -291,19 +298,23 @@ export class PreviewPane {
 		const key = `${file.path}:${file.stat.mtime}`;
 		let pages = this.pdfPages.get(key);
 		if (pages === undefined) {
+			let task: PdfCountTask | null = null;
 			try {
 				const pdfjs = (await loadPdfJs()) as {
-					getDocument(options: { data: ArrayBuffer }): {
-						promise: Promise<{ numPages: number }>;
-					};
+					getDocument(options: { data: ArrayBuffer }): PdfCountTask;
 				};
 				const data = await this.app.vault.readBinary(file);
-				pages = (await pdfjs.getDocument({ data }).promise).numPages;
+				task = pdfjs.getDocument({ data });
+				pages = (await task.promise).numPages;
 				this.pdfPages.set(key, pages);
 			} catch (error) {
 				// Encrypted or malformed PDFs simply have no page count to show.
 				console.error("Barosaurus: could not read the PDF page count", error);
 				return;
+			} finally {
+				// Only the count was wanted; the parsed document (and pdf.js'
+				// worker-side copy of the binary) must not outlive it.
+				if (task) void task.destroy().catch(() => undefined);
 			}
 		}
 		if (token !== this.token) return;

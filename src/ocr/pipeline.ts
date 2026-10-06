@@ -48,6 +48,19 @@ export interface OcrController {
  * immediately while both switches are off, and `enable` is only ever called
  * from the settings toggle.
  */
+/** The slice of pdf.js' loading task the extractor uses. */
+interface PdfLoadingTask {
+	promise: Promise<{
+		numPages: number;
+		getPage(n: number): Promise<{
+			getTextContent(): Promise<{ items: Array<{ str?: string }> }>;
+			cleanup?(): void;
+		}>;
+	}>;
+	/** Destroys the loading task AND the document it produced. */
+	destroy(): Promise<void>;
+}
+
 function isPdf(file: TFile): boolean {
 	return file.extension.toLowerCase() === "pdf";
 }
@@ -287,25 +300,23 @@ export class OcrPipeline implements OcrController {
 	}
 
 	private async extractPdfText(file: TFile): Promise<string> {
+		let task: PdfLoadingTask | null = null;
 		try {
 			const pdfjs = (await loadPdfJs()) as {
-				getDocument(options: { data: ArrayBuffer }): {
-					promise: Promise<{
-						numPages: number;
-						getPage(n: number): Promise<{
-							getTextContent(): Promise<{ items: Array<{ str?: string }> }>;
-						}>;
-					}>;
-				};
+				getDocument(options: { data: ArrayBuffer }): PdfLoadingTask;
 			};
 			const data = await this.app.vault.readBinary(file);
-			const doc = await pdfjs.getDocument({ data }).promise;
+			task = pdfjs.getDocument({ data });
+			const doc = await task.promise;
 			const parts: string[] = [];
 			let length = 0;
 			const pages = Math.min(doc.numPages, MAX_PDF_PAGES);
 			for (let n = 1; n <= pages && length < MAX_EXTRACTED_CHARS; n++) {
 				const page = await doc.getPage(n);
 				const content = await page.getTextContent();
+				// Page resources (fonts, operator lists) stay alive until
+				// cleaned up — a 100-page sweep would otherwise hold them all.
+				page.cleanup?.();
 				const pageText = content.items
 					.map((item) => item.str ?? "")
 					.join(" ")
@@ -318,6 +329,11 @@ export class OcrPipeline implements OcrController {
 			// Scanned or encrypted PDFs simply carry no text layer. Nothing
 			// went wrong from the user's point of view, so nothing is said.
 			return "";
+		} finally {
+			// pdf.js keeps every opened document — and its worker-side copy of
+			// the whole binary — until destroyed. Without this each PDF in the
+			// vault stayed resident for the rest of the session.
+			if (task) void task.destroy().catch(() => undefined);
 		}
 	}
 

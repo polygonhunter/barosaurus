@@ -130,6 +130,9 @@ describe("OcrPipeline lifecycle", () => {
 		await tick(20);
 		expect(engine.search("contract").map((hit) => hit.id)).toEqual([file.path]);
 		expect(pipeline.cachedText(file)).toBe("contract terms");
+		// The document and every page are released again.
+		expect(pdf.destroyed).toBe(1);
+		expect(pdf.pagesCleaned).toBe(1);
 		await pipeline.destroy();
 	});
 });
