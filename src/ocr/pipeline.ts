@@ -4,6 +4,7 @@ import { extractedTextKey, kindForExtension } from "../core/index-types";
 import { idleScheduler, OcrQueue } from "../core/ocr-queue";
 import { isPathExcluded } from "../core/paths";
 import { attachmentDoc } from "../index/content";
+import { yielder } from "../index/yielder";
 import type { BarosaurusSettings } from "../settings";
 import { assetsPresent, ensureAssets } from "./assets";
 import { OcrCache } from "./ocr-cache";
@@ -14,8 +15,6 @@ import type { OcrService } from "./ocr-service";
 /** Hard cap per file — extracted text is a low-weight helper field. */
 const MAX_EXTRACTED_CHARS = 20_000;
 const MAX_PDF_PAGES = 100;
-/** Files considered per sweep chunk before yielding, as in the indexer. */
-const SWEEP_CHUNK_SIZE = 20;
 /**
  * ocr-cache.json holds the text of EVERY recognized file and is rewritten as
  * a whole. Written after a quiet spell, and at least every this many jobs so a
@@ -215,8 +214,8 @@ export class OcrPipeline implements OcrController {
 	// ------------------------------------------------------------ eligibility
 
 	/**
-	 * Enqueue every eligible attachment. Yields to the UI thread every chunk
-	 * the way the indexer does, so a vault full of images does not freeze
+	 * Enqueue every eligible attachment. Yields to the UI thread on a time
+	 * budget the way the indexer does, so a vault full of images does not freeze
 	 * Obsidian while the sweep walks it.
 	 */
 	async scanVault(priority: "high" | "low" = "low"): Promise<void> {
@@ -226,19 +225,11 @@ export class OcrPipeline implements OcrController {
 		try {
 			const excluded = this.getSettings().excludedFolders;
 			const files = this.app.vault.getFiles();
-			let sinceYield = 0;
+			const maybeYield = yielder();
 			for (const file of files) {
 				if (isPathExcluded(file.path, excluded)) continue;
 				this.consider(file, priority);
-				if (++sinceYield >= SWEEP_CHUNK_SIZE) {
-					sinceYield = 0;
-					// setTimeout(0), NOT requestIdleCallback: the latter does not
-					// exist on every mobile platform we ship to. `window` and not
-					// `activeWindow` on purpose — this loop must survive a popout
-					// being closed mid-sweep.
-					await new Promise((resolve) => window.setTimeout(resolve, 0));
-					if (this.isStale(generation)) return;
-				}
+				if ((await maybeYield()) && this.isStale(generation)) return;
 			}
 			// Entries for files that no longer exist anywhere in the vault —
 			// deleted while Barosaurus was not running, or on another device.

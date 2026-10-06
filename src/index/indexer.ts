@@ -4,10 +4,9 @@ import type { SearchEngine } from "../core/engine";
 import type { FieldWeights, SearchHit } from "../core/index-types";
 import { isPathExcluded } from "../core/paths";
 import { extractDocs } from "./content";
+import { yielder } from "./yielder";
 import { IndexPersistence } from "./persistence";
 
-/** Files (re)indexed per chunk before yielding back to the UI thread. */
-const CHUNK_SIZE = 20;
 /**
  * A snapshot is the WHOLE index serialized — megabytes for a large vault —
  * so it is written after a quiet minute, not after every burst of typing…
@@ -304,20 +303,13 @@ export class Indexer {
 		if (this.processing) return;
 		this.processing = true;
 		try {
-			let sinceYield = 0;
+			const maybeYield = yielder();
 			while (this.queue.length > 0 && !this.stopped) {
 				const path = this.queue.shift();
 				if (path === undefined) break;
 				this.queued.delete(path);
 				await this.indexPath(path);
-				if (++sinceYield >= CHUNK_SIZE) {
-					sinceYield = 0;
-					// setTimeout(0), NOT requestIdleCallback: the latter does not
-					// exist on every mobile platform we ship to. `window` and not
-					// `activeWindow` on purpose — this loop must survive a popout
-					// being closed mid-build.
-					await new Promise((resolve) => window.setTimeout(resolve, 0));
-				}
+				await maybeYield();
 			}
 		} finally {
 			this.processing = false;
