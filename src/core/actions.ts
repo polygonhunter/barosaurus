@@ -165,7 +165,10 @@ export const ACTIONS: readonly ActionDef[] = [
 		aliases: ["bookmark", "save"],
 		icon: "bookmark",
 		requiresCorePlugin: "bookmarks",
-		appliesTo: (item) => isFileLike(item) || item.kind === "folder",
+		// Files only, with a real path. The executor bookmarks by opening the
+		// thing and running "bookmark current file" on it: a folder cannot be
+		// opened, so for a folder that bookmarked whatever note was active.
+		appliesTo: (item) => isFileLike(item) && hasPath(item),
 	},
 	{
 		id: "append-daily",

@@ -544,8 +544,10 @@ async function bookmark(host: ExecuteHost, item: OmniItem): Promise<void> {
 		new Notice("Barosaurus: bookmarking is unavailable in this build");
 		return;
 	}
+	// Without a file of its own there is nothing to bookmark: running the
+	// command anyway would bookmark whichever note happens to be active.
 	const path = pathOf(item);
-	if (path !== null) await openPath(app, path, false);
+	if (path === null || !(await openPath(app, path, false))) return;
 	if (!executeCommandById(app, command)) {
 		new Notice("Barosaurus: bookmarking is unavailable in this build");
 		return;
@@ -870,14 +872,15 @@ async function openPath(
 	path: string,
 	paneType: PaneType | boolean,
 	line?: number,
-): Promise<void> {
+): Promise<boolean> {
 	const file = app.vault.getFileByPath(path);
 	if (!file) {
 		new Notice("Barosaurus: that file is gone");
-		return;
+		return false;
 	}
 	const leaf = app.workspace.getLeaf(paneType);
 	await leaf.openFile(file, line === undefined ? undefined : { eState: { line } });
+	return true;
 }
 
 /** `:42` — the editor counts lines from 0, the user counts from 1. */

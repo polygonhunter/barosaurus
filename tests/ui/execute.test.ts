@@ -4,7 +4,7 @@ import type { App } from "obsidian";
 import { parseQuery } from "../../src/core/query";
 import { EMPTY_CONTEXT, type OmniItem } from "../../src/core/types";
 import { ghostSource, isAttachmentLinktext } from "../../src/sources/ghost";
-import { choose } from "../../src/ui/execute";
+import { choose, runAction } from "../../src/ui/execute";
 
 /**
  * The executor and the sources it depends on, against a recording fake App.
@@ -64,5 +64,34 @@ describe("ghost notes", () => {
 		expect(isAttachmentLinktext("Board.canvas")).toBe(true);
 		expect(isAttachmentLinktext("Release 1.2")).toBe(false);
 		expect(isAttachmentLinktext(".hidden")).toBe(false);
+	});
+});
+
+describe("bookmark", () => {
+	it("bookmarks nothing when the file cannot be opened", async () => {
+		const ran: string[] = [];
+		const app = {
+			commands: {
+				commands: { "bookmarks:bookmark-current-file": { id: "bookmarks:bookmark-current-file", name: "Bookmark" } },
+				executeCommandById: (id: string) => {
+					ran.push(id);
+					return true;
+				},
+			},
+			vault: { getFileByPath: () => null },
+		} as unknown as App;
+		const item = {
+			kind: "file",
+			source: "file",
+			group: "files",
+			id: "file:gone.md",
+			title: "gone",
+			aliases: [],
+			tile: { kind: "icon", icon: "file" },
+			path: "gone.md",
+			resultKind: "note",
+		} as unknown as OmniItem;
+		await runAction({ app, remember: () => undefined }, "bookmark", item);
+		expect(ran).toEqual([]);
 	});
 });

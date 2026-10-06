@@ -64,6 +64,35 @@ describe("the registry is reachable", () => {
 	});
 });
 
+describe("bookmark", () => {
+	it("is offered for files but not for folders or path-less bookmarks", () => {
+		const folder = {
+			kind: "folder",
+			source: "folder",
+			group: "folders",
+			id: "folder:Projects",
+			title: "Projects",
+			aliases: [],
+			tile: { kind: "icon", icon: "folder" },
+			path: "Projects",
+		} as unknown as OmniItem;
+		const searchBookmark = {
+			kind: "bookmark",
+			source: "bookmark",
+			group: "bookmarks",
+			id: "bookmark:search",
+			title: "Open tasks",
+			aliases: [],
+			tile: { kind: "icon", icon: "search" },
+		} as unknown as OmniItem;
+		const ids = (item: OmniItem) =>
+			actionsFor(ACTIONS, item, EMPTY_CONTEXT, ALL_AVAILABLE).map((a) => a.id);
+		expect(ids(fixtureFile("a"))).toContain("bookmark");
+		expect(ids(folder)).not.toContain("bookmark");
+		expect(ids(searchBookmark)).not.toContain("bookmark");
+	});
+});
+
 describe("closesBar", () => {
 	it("keeps the bar open for the list-keeping actions", () => {
 		expect(closesBar("pin")).toBe(false);
