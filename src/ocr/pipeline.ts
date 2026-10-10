@@ -76,7 +76,13 @@ export class OcrPipeline implements OcrController {
 	private readonly cache: OcrCache;
 	private service: OcrService | null = null;
 	private missingAssetsWarned = false;
-	private sweeping = false;
+	/**
+	 * Generation of the sweep that is walking the vault right now, or null.
+	 * A generation and not a boolean: after disable()+enable() the old sweep
+	 * bails out at its next pause, so the new one must be allowed to start —
+	 * a boolean made it return at once and left the rest of the vault unswept.
+	 */
+	private sweepingGeneration: number | null = null;
 	/**
 	 * False until the cache is loaded. Before that every lookup misses, and
 	 * `consider` would queue a recognition for text the cache already holds.
@@ -219,9 +225,9 @@ export class OcrPipeline implements OcrController {
 	 * Obsidian while the sweep walks it.
 	 */
 	async scanVault(priority: "high" | "low" = "low"): Promise<void> {
-		if (this.sweeping || this.stopped) return;
-		this.sweeping = true;
+		if (this.stopped || this.sweepingGeneration === this.generation) return;
 		const generation = this.generation;
+		this.sweepingGeneration = generation;
 		try {
 			const excluded = this.getSettings().excludedFolders;
 			const files = this.app.vault.getFiles();
@@ -239,7 +245,8 @@ export class OcrPipeline implements OcrController {
 				this.saveCacheSoon();
 			}
 		} finally {
-			this.sweeping = false;
+			// A newer sweep may have taken over meanwhile; leave its mark alone.
+			if (this.sweepingGeneration === generation) this.sweepingGeneration = null;
 		}
 	}
 
