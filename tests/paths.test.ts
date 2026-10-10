@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	folderOf,
+	cleanExcludedFolders,
 	isPathExcluded,
 	normalizeExcludedFolders,
 	parseExcludedFolders,
@@ -51,6 +52,20 @@ describe("parseExcludedFolders", () => {
 		expect(
 			parseExcludedFolders("templates\n /Archive/2019/ \r\n\\Work\\Old\\\n\n templates "),
 		).toEqual(["templates", "Archive/2019", "Work/Old"]);
+	});
+});
+
+describe("cleanExcludedFolders", () => {
+	it("repairs stored entries saved before the textarea normalized them", () => {
+		expect(cleanExcludedFolders(["/templates", "Archive\\2019\\", "templates", "", 3])).toEqual([
+			"templates",
+			"Archive/2019",
+		]);
+	});
+
+	it("survives a hand-edited data.json", () => {
+		expect(cleanExcludedFolders(undefined)).toEqual([]);
+		expect(cleanExcludedFolders("templates")).toEqual([]);
 	});
 });
 

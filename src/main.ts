@@ -10,6 +10,7 @@ import {
 import { supportUrl, type SupportInfo } from "./core/catalog";
 import { contextBoosts } from "./core/context";
 import { DEFAULT_WEIGHTS } from "./core/index-types";
+import { cleanExcludedFolders } from "./core/paths";
 import { fileItemId, frecencyKeyFor } from "./core/types";
 import type { RankOptions } from "./core/rank";
 import { Indexer } from "./index/indexer";
@@ -415,6 +416,7 @@ export default class BarosaurusPlugin extends Plugin {
 	async loadSettings(): Promise<void> {
 		const raw = (await this.loadData()) as Partial<StoredShape> | null;
 		this.settings = { ...DEFAULT_SETTINGS, ...(raw?.settings ?? {}) };
+		this.settings.excludedFolders = cleanExcludedFolders(this.settings.excludedFolders);
 		this.data = { ...structuredClone(DEFAULT_DATA), ...(raw?.data ?? {}) };
 	}
 

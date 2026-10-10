@@ -49,8 +49,20 @@ export function isPathExcluded(path: string, folders: readonly string[]): boolea
  * matched nothing before, since vault paths never start with a slash.
  */
 export function parseExcludedFolders(raw: string): string[] {
+	return cleanExcludedFolders(raw.split(/\r?\n/));
+}
+
+/**
+ * The same normalization for a stored list — applied once when the settings
+ * load, so entries saved before the textarea normalized ("/templates",
+ * "Archive\\2019") start working without anyone having to edit the field.
+ * Non-string rows from a hand-edited data.json are dropped.
+ */
+export function cleanExcludedFolders(folders: unknown): string[] {
 	const out: string[] = [];
-	for (const line of raw.split(/\r?\n/)) {
+	if (!Array.isArray(folders)) return out;
+	for (const line of folders) {
+		if (typeof line !== "string") continue;
 		const folder = line
 			.trim()
 			.replace(/\\/g, "/")
