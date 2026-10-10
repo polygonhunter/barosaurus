@@ -22,6 +22,12 @@ const MAX_PDF_PAGES = 100;
  */
 const CACHE_SAVE_QUIET_MS = 5_000;
 const CACHE_SAVE_EVERY_JOBS = 50;
+/**
+ * How long a cache entry survives without its file before a sweep drops it.
+ * Long on purpose: the cache is synced, and an attachment that is merely not
+ * downloaded yet must not cost the desktop a second recognition.
+ */
+const CACHE_MISSING_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * What the settings tab needs from the pipeline: switch extraction on (which
@@ -230,19 +236,23 @@ export class OcrPipeline implements OcrController {
 		this.sweepingGeneration = generation;
 		try {
 			const excluded = this.getSettings().excludedFolders;
-			const files = this.app.vault.getFiles();
 			const maybeYield = yielder();
-			for (const file of files) {
+			for (const file of this.app.vault.getFiles()) {
 				if (isPathExcluded(file.path, excluded)) continue;
 				this.consider(file, priority);
 				if ((await maybeYield()) && this.isStale(generation)) return;
 			}
 			// Entries for files that no longer exist anywhere in the vault —
-			// deleted while Barosaurus was not running, or on another device.
-			// Excluded files are kept: un-excluding a folder must not cost a
-			// second recognition of everything in it.
-			if (this.loaded && this.cache.prune(new Set(files.map((file) => file.path)))) {
-				this.saveCacheSoon();
+			// deleted while Barosaurus was not running, or on another device —
+			// are aged out after a grace period. Desktop only: a phone often
+			// lacks the attachments on purpose and cannot recognize images
+			// anyway. The file list is read AFTER the walk, so files created
+			// or renamed while it ran keep their entries. Excluded files are
+			// kept too: un-excluding a folder must not cost a second
+			// recognition of everything in it.
+			if (this.loaded && Platform.isDesktop) {
+				const present = new Set(this.app.vault.getFiles().map((file) => file.path));
+				if (this.cache.prune(present, Date.now(), CACHE_MISSING_GRACE_MS)) this.saveCacheSoon();
 			}
 		} finally {
 			// A newer sweep may have taken over meanwhile; leave its mark alone.

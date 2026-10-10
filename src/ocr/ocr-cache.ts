@@ -6,6 +6,12 @@ export interface OcrCacheEntry {
 	/** Language combo the text was recognized with, e.g. "deu+eng". */
 	langs: string;
 	text: string;
+	/**
+	 * When a sweep first found no file at this path (ms since epoch). Unset
+	 * while the file exists. Optional, so older plugin versions read the file
+	 * unchanged and simply ignore the field.
+	 */
+	missingSince?: number;
 }
 
 interface CacheFileShape {
@@ -69,18 +75,35 @@ export class OcrCache {
 	}
 
 	/**
-	 * Drop every entry whose path is not in `keep`. Returns whether anything
-	 * was removed, so the caller only writes when it has to.
+	 * Age out entries whose file is gone. An entry whose path is not in
+	 * `present` is first only marked as missing; it is dropped once it has
+	 * been missing for longer than `graceMs`. A file that shows up again
+	 * loses its mark. Returns whether anything changed, so the caller only
+	 * writes when it has to.
+	 *
+	 * Never dropped at first sight: the file is synced, and a device that
+	 * merely does not HAVE the attachments yet (first sync still running,
+	 * selective sync without images/PDFs) would otherwise empty the cache and
+	 * sync that back to the desktop that did the recognizing.
 	 */
-	prune(keep: ReadonlySet<string>): boolean {
-		let removed = false;
-		for (const path of Object.keys(this.entries)) {
-			if (keep.has(path)) continue;
-			delete this.entries[path];
-			removed = true;
+	prune(present: ReadonlySet<string>, now: number, graceMs: number): boolean {
+		let changed = false;
+		for (const [path, entry] of Object.entries(this.entries)) {
+			if (present.has(path)) {
+				if (entry.missingSince !== undefined) {
+					delete entry.missingSince;
+					changed = true;
+				}
+			} else if (entry.missingSince === undefined) {
+				entry.missingSince = now;
+				changed = true;
+			} else if (now - entry.missingSince > graceMs) {
+				delete this.entries[path];
+				changed = true;
+			}
 		}
-		if (removed) this.dirty = true;
-		return removed;
+		if (changed) this.dirty = true;
+		return changed;
 	}
 
 	async save(): Promise<void> {

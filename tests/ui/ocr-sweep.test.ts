@@ -77,4 +77,28 @@ describe("OCR sweep", () => {
 		expect(new Set(seen.slice(before)).size).toBe(files.length);
 		await pipeline.destroy();
 	});
+
+	it("keeps the cache entry of a file created while the sweep ran", async () => {
+		const files = Array.from({ length: 10 }, (_, i) => pdfFile(`f${i}.pdf`));
+		const { pipeline, plugin, writes } = harness(files);
+		await pipeline.init(plugin);
+		const run = pipeline.enable();
+		await turn();
+		// A new PDF appears and its text is stored while the sweep still walks.
+		const fresh = pdfFile("new.pdf");
+		files.push(fresh);
+		(pipeline as unknown as { cache: { set(path: string, entry: object): void } }).cache.set("new.pdf", {
+			mtime: 1,
+			size: 100,
+			langs: "pdf",
+			text: "fresh text",
+		});
+		await run;
+		expect(pipeline.cachedText(fresh)).toBe("fresh text");
+		await pipeline.destroy();
+		const saved = JSON.parse(writes[writes.length - 1] ?? "{}") as {
+			entries: Record<string, { missingSince?: number }>;
+		};
+		expect(saved.entries["new.pdf"]?.missingSince).toBeUndefined();
+	});
 });

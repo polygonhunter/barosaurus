@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TFile, type App, type Plugin } from "obsidian";
+import { Platform, TFile, type App, type Plugin } from "obsidian";
 import { SearchEngine } from "../../src/core/engine";
 import { DEFAULT_WEIGHTS } from "../../src/core/index-types";
 import { OcrPipeline } from "../../src/ocr/pipeline";
@@ -160,7 +160,11 @@ describe("the extraction cache file", () => {
 		await pipeline.destroy();
 	});
 
-	it("loads on enable, serves cached text, and prunes files that are gone", async () => {
+	type Written = { entries: Record<string, { missingSince?: number }> };
+	const lastWrite = (writes: string[]) => JSON.parse(writes[writes.length - 1] ?? "{}") as Written;
+	const DAY = 24 * 60 * 60 * 1000;
+
+	it("loads on enable, serves cached text, and only marks a missing file at first", async () => {
 		const { pipeline, engine, writes, file, plugin } = harness({}, stored);
 		await pipeline.init(plugin);
 		expect(pipeline.cachedText(file)).toBeNull();
@@ -171,9 +175,45 @@ describe("the extraction cache file", () => {
 
 		expect(pipeline.cachedText(file)).toBe("contract terms");
 		expect(engine.search("contract").map((hit) => hit.id)).toEqual([file.path]);
-		// The harness debounce is synchronous, so the pruned file is written at once.
-		const last = JSON.parse(writes[writes.length - 1] ?? "{}") as { entries: object };
-		expect(Object.keys(last.entries)).toEqual(["docs/contract.pdf"]);
+		// The harness debounce is synchronous, so the mark is written at once.
+		const last = lastWrite(writes);
+		expect(Object.keys(last.entries)).toEqual(["docs/contract.pdf", "docs/deleted.pdf"]);
+		expect(last.entries["docs/deleted.pdf"]?.missingSince).toEqual(expect.any(Number));
+		expect(last.entries["docs/contract.pdf"]?.missingSince).toBeUndefined();
 		await pipeline.destroy();
+	});
+
+	it("drops an entry only after its file has been missing for the grace period", async () => {
+		const now = vi.spyOn(Date, "now");
+		try {
+			const start = 1_800_000_000_000;
+			now.mockReturnValue(start);
+			const { pipeline, writes, plugin } = harness({ indexPdfText: true }, stored);
+			await pipeline.init(plugin);
+			await pipeline.scanVault();
+			now.mockReturnValue(start + 29 * DAY);
+			await pipeline.scanVault();
+			expect(Object.keys(lastWrite(writes).entries)).toContain("docs/deleted.pdf");
+			now.mockReturnValue(start + 31 * DAY);
+			await pipeline.scanVault();
+			expect(Object.keys(lastWrite(writes).entries)).toEqual(["docs/contract.pdf"]);
+			await pipeline.destroy();
+		} finally {
+			now.mockRestore();
+		}
+	});
+
+	it("never ages out entries on a phone, which may simply lack the attachments", async () => {
+		const platform = Platform as { isDesktop: boolean };
+		platform.isDesktop = false;
+		try {
+			const { pipeline, writes, plugin } = harness({ indexPdfText: true }, stored);
+			await pipeline.init(plugin);
+			await pipeline.scanVault();
+			expect(writes).toEqual([]);
+			await pipeline.destroy();
+		} finally {
+			platform.isDesktop = true;
+		}
 	});
 });
