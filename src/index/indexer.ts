@@ -323,6 +323,11 @@ export class Indexer {
 			const isNote = file.extension === "md";
 			const extracted = isNote ? null : (this.host.extractedTextFor?.(file) ?? null);
 			const docs = await extractDocs(this.app, file, extracted ?? "");
+			// The file may have been deleted or renamed while it was read. Its
+			// forget() has already run, so writing now would leave a phantom
+			// doc under a path that no longer exists (a rename re-queues the
+			// new path on its own).
+			if (this.stopped || this.app.vault.getFileByPath(path) !== file || file.path !== path) return;
 			const newLinkIds = new Set(
 				docs.filter((doc) => doc.kind === "link").map((doc) => doc.id),
 			);

@@ -22,6 +22,7 @@ interface FakeVault {
 	plugin: Plugin;
 	fire(target: "vault" | "metadataCache", name: string, ...args: unknown[]): void;
 	add(path: string, mtime?: number): TFile;
+	remove(path: string): void;
 }
 
 function fakeVault(): FakeVault {
@@ -55,6 +56,9 @@ function fakeVault(): FakeVault {
 		} as unknown as Plugin,
 		fire(target, name, ...args) {
 			for (const cb of handlers.get(`${target}:${name}`) ?? []) cb(...args);
+		},
+		remove(path) {
+			files.delete(path);
 		},
 		add(path, mtime = 1) {
 			const file = new TFile();
@@ -118,6 +122,34 @@ describe("Indexer ↔ extraction cache", () => {
 		await settle(indexer);
 		expect(asked).toEqual([]);
 		expect(indexer.size).toBe(1);
+		indexer.stop();
+	});
+});
+
+describe("Indexer ↔ files that change while being read", () => {
+	it("does not resurrect a note deleted while it was being read", async () => {
+		const vault = fakeVault();
+		const engine = new SearchEngine(DEFAULT_WEIGHTS);
+		const indexer = new Indexer(vault.app, engine, DEFAULT_WEIGHTS, {
+			getSettings: () => ({ excludedFolders: [] }),
+		});
+		await indexer.start(vault.plugin);
+		await settle(indexer);
+
+		let release: (text: string) => void = () => undefined;
+		(vault.app.vault as unknown as { cachedRead: () => Promise<string> }).cachedRead = () =>
+			new Promise((resolve) => {
+				release = resolve;
+			});
+		const note = vault.add("Notes/temp.md");
+		vault.fire("metadataCache", "changed", note);
+		await new Promise((resolve) => setTimeout(resolve, 10)); // read is in flight
+		vault.remove(note.path);
+		vault.fire("vault", "delete", note);
+		release("phantom body");
+		await settle(indexer);
+
+		expect(engine.has("Notes/temp.md")).toBe(false);
 		indexer.stop();
 	});
 });

@@ -337,7 +337,7 @@ export class OcrPipeline implements OcrController {
 				if (!service) return;
 				const url = this.app.vault.getResourcePath(file);
 				const text = (await service.recognize(url, langs)).slice(0, MAX_EXTRACTED_CHARS);
-				if (this.isStale(generation)) return;
+				if (this.isStale(generation) || !this.stillExists(file)) return;
 				this.cache.set(file.path, {
 					mtime: file.stat.mtime,
 					size: file.stat.size,
@@ -366,7 +366,7 @@ export class OcrPipeline implements OcrController {
 				// Capped BEFORE caching: only this much is ever indexed, and the
 				// cache file is synced and rewritten whole.
 				const text = (await this.extractPdfText(file)).slice(0, MAX_EXTRACTED_CHARS);
-				if (this.isStale(generation)) return;
+				if (this.isStale(generation) || !this.stillExists(file)) return;
 				this.cache.set(file.path, {
 					mtime: file.stat.mtime,
 					size: file.stat.size,
@@ -429,6 +429,16 @@ export class OcrPipeline implements OcrController {
 		if (this.engine.textKeyOf(file.path) === extractedTextKey(clipped)) return;
 		this.engine.upsert(attachmentDoc(file, clipped));
 		this.persistSoon();
+	}
+
+	/**
+	 * Whether a file a job started on is still in the vault. A job runs for
+	 * seconds; a file deleted meanwhile must not come back as a phantom doc
+	 * and cache entry. A rename is fine — `file.path` already holds the new
+	 * path, which is where the result belongs.
+	 */
+	private stillExists(file: TFile): boolean {
+		return this.app.vault.getFileByPath(file.path) === file;
 	}
 
 	private async assetsReady(): Promise<boolean> {

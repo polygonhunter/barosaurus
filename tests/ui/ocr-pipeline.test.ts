@@ -70,6 +70,7 @@ function harness(settings: Partial<BarosaurusSettings>, stored: string | null = 
 		vault: {
 			on: () => ({}),
 			getFiles: () => files,
+			getFileByPath: (path: string) => files.find((file) => file.path === path) ?? null,
 			readBinary: () => Promise.resolve(new ArrayBuffer(8)),
 			adapter: {
 				exists: () => Promise.resolve(stored !== null),
@@ -91,7 +92,7 @@ function harness(settings: Partial<BarosaurusSettings>, stored: string | null = 
 		registerEvent: () => undefined,
 		registerDomEvent: () => undefined,
 	} as unknown as Plugin;
-	return { pipeline, engine, writes, reads, file: files[0] as TFile, plugin };
+	return { pipeline, engine, writes, reads, file: files[0] as TFile, plugin, files };
 }
 
 /** Let idle-scheduled jobs (setTimeout 200 in jsdom) and microtasks run. */
@@ -126,6 +127,19 @@ describe("OcrPipeline lifecycle", () => {
 		expect(await pipeline.enable()).toBe(false);
 		await tick();
 		expect(writes).toEqual([]);
+	});
+
+	it("drops the result of a job whose file was deleted meanwhile", async () => {
+		const { pipeline, engine, file, plugin, files } = harness({ indexPdfText: true });
+		await pipeline.init(plugin);
+		pipeline.consider(file, "high");
+		await tick(); // job is now waiting on getTextContent
+		files.splice(0, files.length);
+		pdf.release();
+		await tick(20);
+		expect(engine.has(file.path)).toBe(false);
+		expect(pipeline.cachedText(file)).toBeNull();
+		await pipeline.destroy();
 	});
 
 	it("indexes a finished PDF job", async () => {
