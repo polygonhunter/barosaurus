@@ -28,7 +28,7 @@ describe("stripFrontmatter", () => {
 });
 
 describe("PreviewPane", () => {
-	function pane() {
+	function pane(body = "body text") {
 		const reads: string[] = [];
 		const file = Object.assign(new TFile(), {
 			path: "Notes/a.md",
@@ -42,7 +42,7 @@ describe("PreviewPane", () => {
 				getFileByPath: (path: string) => (path === file.path ? file : null),
 				cachedRead: (target: TFile) => {
 					reads.push(target.path);
-					return Promise.resolve("body text");
+					return Promise.resolve(body);
 				},
 			},
 		} as unknown as App;
@@ -55,6 +55,15 @@ describe("PreviewPane", () => {
 		await preview.showTarget({ path: "Notes/a.md", kind: "note" }, ["bo"]);
 		await preview.showTarget({ path: "Notes/a.md", kind: "note" }, ["bod"]);
 		expect(reads).toEqual(["Notes/a.md"]);
+		preview.destroy();
+	});
+
+	it("moves a long note's excerpt to the new match when the query changes", async () => {
+		const filler = Array.from({ length: 300 }, (_, i) => `filler line ${i}`).join("\n");
+		const { preview, reads } = pane(`alpha start\n${filler}\nomega end`);
+		await preview.showTarget({ path: "Notes/a.md", kind: "note" }, ["alpha"]);
+		await preview.showTarget({ path: "Notes/a.md", kind: "note" }, ["omega"]);
+		expect(reads).toEqual(["Notes/a.md", "Notes/a.md"]);
 		preview.destroy();
 	});
 

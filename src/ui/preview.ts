@@ -7,7 +7,7 @@ import {
 	type App,
 	type TFile,
 } from "obsidian";
-import { excerptAround } from "../core/excerpt";
+import { excerptAround, excerptFollowsWords } from "../core/excerpt";
 import type { OmniItem, ResultKind } from "../core/types";
 import { iconForResultKind } from "./icons";
 
@@ -143,6 +143,12 @@ export class PreviewPane {
 	 * to move the highlights was the pane's most common waste.
 	 */
 	private lastKey: string | null = null;
+	/**
+	 * The query words the excerpt on screen was cut around, or null when the
+	 * cut does not depend on them (short note, or centred on a line). A long
+	 * note without a line must move its window to the new match.
+	 */
+	private lastWords: string | null = null;
 	/** The rendered note body, so highlights can be redone in place. */
 	private noteEl: HTMLElement | null = null;
 	/** `path:mtime` → page count, so a second look at a PDF is free. */
@@ -169,6 +175,7 @@ export class PreviewPane {
 		this.component?.unload();
 		this.component = null;
 		this.lastKey = null;
+		this.lastWords = null;
 		this.noteEl = null;
 	}
 
@@ -208,7 +215,8 @@ export class PreviewPane {
 
 		// Already on screen: only the highlights can have changed.
 		const key = `${target.path}|${target.line ?? ""}|${file.stat.mtime}`;
-		if (key === this.lastKey) {
+		const words = queryWords.map((word) => word.toLowerCase()).join("\u0000");
+		if (key === this.lastKey && (this.lastWords === null || this.lastWords === words)) {
 			if (this.noteEl !== null) {
 				unmarkMatches(this.noteEl);
 				markMatches(this.noteEl, queryWords);
@@ -227,10 +235,12 @@ export class PreviewPane {
 		const next = this.el.doc.createElement("div");
 		/** The owner of THIS render's rendered subtree, adopted only on swap-in. */
 		let owner: Component | null = null;
+		/** Set by buildNote: whether this excerpt was cut around the words. */
+		const excerptInfo = { followsWords: false };
 		try {
 			switch (target.kind) {
 				case "note":
-					owner = await this.buildNote(next, file, queryWords, target.line, token);
+					owner = await this.buildNote(next, file, queryWords, target.line, token, excerptInfo);
 					break;
 				case "image":
 					this.buildImage(next, file);
@@ -264,6 +274,7 @@ export class PreviewPane {
 		while (next.firstChild !== null) this.el.appendChild(next.firstChild);
 		this.el.createDiv({ cls: "barosaurus-preview-path", text: target.path });
 		this.lastKey = key;
+		this.lastWords = excerptInfo.followsWords ? words : null;
 		this.noteEl = this.el.querySelector<HTMLElement>(".barosaurus-preview-note");
 
 		// Cheap-enough facts that need their own read land afterwards, still
@@ -286,6 +297,7 @@ export class PreviewPane {
 		queryWords: readonly string[],
 		line: number | undefined,
 		token: number,
+		excerptInfo: { followsWords: boolean },
 	): Promise<Component | null> {
 		const body = await this.app.vault.cachedRead(file);
 		// Bail before spending a render on an answer nobody is waiting for.
@@ -296,6 +308,7 @@ export class PreviewPane {
 		const { body: content, lines: cut } = stripFrontmatter(body);
 		const bodyLine = line === undefined || line < cut ? undefined : line - cut;
 		const excerpt = excerptAround(content, queryWords, bodyLine);
+		excerptInfo.followsWords = excerptFollowsWords(content, bodyLine);
 		const contentEl = el.createDiv({ cls: "barosaurus-preview-note markdown-rendered" });
 		const owner = new Component();
 		owner.load();

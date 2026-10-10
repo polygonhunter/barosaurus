@@ -102,3 +102,21 @@ export function excerptAround(
 	const end = body.indexOf("\n", focus + maxChars / 2);
 	return body.slice(start === -1 ? 0 : start + 1, end === -1 ? body.length : end);
 }
+
+/**
+ * Whether `excerptAround` would pick a different window for different query
+ * words — true only for a body longer than the window that has no usable line
+ * to centre on. The preview keys its "already on screen" shortcut on this: a
+ * new query must move such an excerpt to the new match, not just re-highlight.
+ */
+export function excerptFollowsWords(
+	body: string,
+	line?: number,
+	maxChars = MAX_EXCERPT_CHARS,
+): boolean {
+	if (body.length <= maxChars) return false;
+	if (line === undefined || line <= 0) return true;
+	let lines = 1;
+	for (let i = body.indexOf("\n"); i !== -1 && lines <= line; i = body.indexOf("\n", i + 1)) lines += 1;
+	return line >= lines;
+}

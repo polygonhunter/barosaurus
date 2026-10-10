@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { excerptAround, findMatchLine, snippetAt } from "../src/core/excerpt";
+import { excerptAround, excerptFollowsWords, findMatchLine, snippetAt } from "../src/core/excerpt";
 import { foldedWords } from "../src/core/normalize";
 
 describe("findMatchLine", () => {
@@ -37,5 +37,24 @@ describe("snippetAt", () => {
 describe("excerptAround", () => {
 	it("returns short bodies whole", () => {
 		expect(excerptAround("short", ["x"])).toBe("short");
+	});
+});
+
+describe("excerptFollowsWords", () => {
+	const long = Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n");
+
+	it("is false for a body that fits whole", () => {
+		expect(excerptFollowsWords("short note")).toBe(false);
+	});
+
+	it("is true for a long body without a usable line", () => {
+		expect(excerptFollowsWords(long)).toBe(true);
+		expect(excerptFollowsWords(long, 0)).toBe(true);
+		expect(excerptFollowsWords(long, 300)).toBe(true);
+	});
+
+	it("is false when the excerpt is centred on a line", () => {
+		expect(excerptFollowsWords(long, 299)).toBe(false);
+		expect(excerptFollowsWords(long, 1)).toBe(false);
 	});
 });
