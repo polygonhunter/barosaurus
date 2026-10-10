@@ -257,6 +257,13 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	 * it did not make was travelling.
 	 */
 	private selectedIndex = -1;
+	/**
+	 * The item the user had moved to when the streamed rows were mixed in,
+	 * for the input it belongs to. The repaint puts Obsidian's selection back
+	 * on the first row; without carrying it over, an arrowed-to row was lost
+	 * and a quick Enter opened a different result.
+	 */
+	private restoreSelection: { id: string; query: string } | null = null;
 	/** True while re-dispatching our own navigation keys, so we let them pass. */
 	private synthetic = false;
 
@@ -547,6 +554,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 
 	async getSuggestions(query: string): Promise<OmniRow[]> {
 		const token = ++this.queryToken;
+		if (this.restoreSelection?.query !== query) this.restoreSelection = null;
 		this.stack = setPageQuery(this.stack, query);
 
 		// A pushed level answers for itself: the sources have nothing to say
@@ -654,6 +662,11 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// "No matches.".
 		const adds = dedupeFullText([...sync, ...streamed]).length > sync.length;
 		if (!adds && sync.length > 0) return;
+		// Moved off the first result already? Then stay on that item.
+		const active = this.selectedIndex >= 0 ? this.activeItem() : null;
+		const first = this.rows.find((row) => !isGroupHeader(row));
+		this.restoreSelection =
+			active !== null && first !== undefined && active.id !== first.id ? { id: active.id, query } : null;
 		this.refresh();
 	}
 
@@ -866,8 +879,9 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		this.pill.mount(this.resultContainerEl);
 		this.pill.schedule();
 		const rows = this.rowEls();
-		const landed = rows.findIndex((el) => el.hasClass("is-selected"));
+		let landed = rows.findIndex((el) => el.hasClass("is-selected"));
 		if (landed < 0) return;
+		landed = this.restoreAfterRepaint(rows, landed);
 		const landedEl = rows[landed];
 		if (landedEl === undefined) return;
 
@@ -905,6 +919,24 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		const target =
 			previous !== null && previous.classList.contains("barosaurus-group-row") ? previous : el;
 		target.scrollIntoView({ block: "nearest" });
+	}
+
+	/**
+	 * After the streamed rows were mixed in: step the selection from where the
+	 * repaint put it back to the item the user had chosen, if it is still in
+	 * the list. Returns the row the selection is on now.
+	 */
+	private restoreAfterRepaint(rows: readonly HTMLElement[], landed: number): number {
+		const restore = this.restoreSelection;
+		if (restore === null) return landed;
+		this.restoreSelection = null;
+		if (rows.length !== this.rows.length) return landed;
+		const target = this.rows.findIndex((row) => !isGroupHeader(row) && row.id === restore.id);
+		if (target < 0 || target === landed) return landed;
+		const direction = target > landed ? 1 : -1;
+		this.step(direction, Math.abs(target - landed));
+		const now = this.rowEls().findIndex((el) => el.hasClass("is-selected"));
+		return now < 0 ? landed : now;
 	}
 
 	/**

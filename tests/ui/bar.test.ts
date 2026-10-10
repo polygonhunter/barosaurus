@@ -584,6 +584,35 @@ describe("streaming sources fold in behind the first paint", () => {
 		await vi.waitFor(() => expect(rowTitles(modal).join("|")).toContain("Bold in body text"));
 	});
 
+	it("keeps an arrowed-to row selected when the streamed rows mix in", async () => {
+		const calls: string[] = [];
+		const app = {
+			vault: { getFileByPath: () => null, getResourcePath: () => "" },
+			workspace: { getActiveViewOfType: () => null },
+		} as unknown as App;
+		const modal = new OmnibarModal(app, {
+			sources: [
+				sourceOf([commandItem("bold", "Bold"), commandItem("boldest", "Boldest")]),
+				streamingOf([commandItem("bolder", "Bold in body text")], calls),
+			],
+			showPreview: false,
+		});
+		modal.open();
+		opened.push(modal);
+		type(modal, "bold");
+		await settle();
+		expect(rowTitles(modal).join("|")).not.toContain("Bold in body text");
+		press(modal, "ArrowDown");
+		await settle();
+		const selected = () =>
+			itemRows(modal).find((el) => el.hasClass("is-selected"))?.textContent ?? "";
+		expect(selected()).toContain("Boldest");
+
+		await vi.waitFor(() => expect(rowTitles(modal).join("|")).toContain("Bold in body text"));
+		await settle();
+		expect(selected()).toContain("Boldest");
+	});
+
 	it("asks the slow source only once typing pauses", async () => {
 		const calls: string[] = [];
 		const modal = openTwoPhase(calls);
