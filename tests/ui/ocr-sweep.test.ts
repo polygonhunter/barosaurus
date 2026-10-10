@@ -30,11 +30,15 @@ function pdfFile(path: string): TFile {
 	return file;
 }
 
-function harness(files: TFile[], stored: string | null = null) {
+function harness(files: TFile[], stored: string | null = null, settings: Partial<BarosaurusSettings> = { indexPdfText: true }) {
 	const writes: string[] = [];
+	const handlers = new Map<string, (...args: unknown[]) => void>();
 	const app = {
 		vault: {
-			on: () => ({}),
+			on: (name: string, cb: (...args: unknown[]) => void) => {
+				handlers.set(name, cb);
+				return {};
+			},
 			getFiles: () => [...files],
 			getFileByPath: (path: string) => files.find((file) => file.path === path) ?? null,
 			// Never resolves: jobs stay in flight, only the sweep itself is observed.
@@ -49,10 +53,11 @@ function harness(files: TFile[], stored: string | null = null) {
 			},
 		},
 	} as unknown as App;
-	const current: BarosaurusSettings = { ...DEFAULT_SETTINGS, indexPdfText: true };
+	const current: BarosaurusSettings = { ...DEFAULT_SETTINGS, ...settings };
 	const pipeline = new OcrPipeline(app, new SearchEngine(DEFAULT_WEIGHTS), () => current, "x", () => undefined);
 	const plugin = { registerEvent: () => undefined, registerDomEvent: () => undefined } as unknown as Plugin;
-	return { pipeline, plugin, writes };
+	const fire = (name: string, ...args: unknown[]) => handlers.get(name)?.(...args);
+	return { pipeline, plugin, writes, current, fire };
 }
 
 const turn = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -100,5 +105,26 @@ describe("OCR sweep", () => {
 			entries: Record<string, { missingSince?: number }>;
 		};
 		expect(saved.entries["new.pdf"]?.missingSince).toBeUndefined();
+	});
+
+	it("carries a rename over that happened while extraction was switched off", async () => {
+		const stored = JSON.stringify({
+			version: 1,
+			entries: {
+				"old.pdf": { mtime: 1, size: 100, langs: "pdf", text: "kept text" },
+				"gone.pdf": { mtime: 1, size: 100, langs: "pdf", text: "deleted" },
+			},
+		});
+		const renamed = pdfFile("new.pdf");
+		const { pipeline, plugin, current, fire, writes } = harness([renamed], stored, {});
+		await pipeline.init(plugin);
+		fire("rename", renamed, "old.pdf");
+		fire("delete", pdfFile("gone.pdf"));
+		current.indexPdfText = true;
+		await pipeline.enable();
+		expect(pipeline.cachedText(renamed)).toBe("kept text");
+		await pipeline.destroy();
+		const saved = JSON.parse(writes[writes.length - 1] ?? "{}") as { entries: object };
+		expect(Object.keys(saved.entries)).toEqual(["new.pdf"]);
 	});
 });

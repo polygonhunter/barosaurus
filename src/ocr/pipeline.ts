@@ -102,6 +102,12 @@ export class OcrPipeline implements OcrController {
 	private jobsSinceSave = 0;
 	/** In flight, so concurrent callers share one load. */
 	private loading: Promise<void> | null = null;
+	/**
+	 * Deletes and renames seen before the cache was loaded (both switches
+	 * off), replayed in order once it is. Without this a renamed attachment
+	 * lost its entry and had to be recognized again after switching back on.
+	 */
+	private pendingMoves: Array<{ from: string; to: string | null }> = [];
 
 	constructor(
 		private readonly app: App,
@@ -140,13 +146,13 @@ export class OcrPipeline implements OcrController {
 	async init(plugin: Plugin): Promise<void> {
 		plugin.registerEvent(
 			this.app.vault.on("delete", (file) => {
-				if (this.loaded) this.cache.remove(file.path);
+				this.moveEntry(file.path, null);
 				this.queue.drop(file.path);
 			}),
 		);
 		plugin.registerEvent(
 			this.app.vault.on("rename", (file, oldPath) => {
-				if (this.loaded) this.cache.rename(oldPath, file.path);
+				this.moveEntry(oldPath, file.path);
 				this.queue.drop(oldPath);
 			}),
 		);
@@ -160,11 +166,26 @@ export class OcrPipeline implements OcrController {
 		if (settings.ocrEnabled || settings.indexPdfText) await this.ensureLoaded();
 	}
 
+	/** Rename (`to` set) or delete (`to` null) a cache entry, now or once loaded. */
+	private moveEntry(from: string, to: string | null): void {
+		if (!this.loaded) {
+			if (!this.stopped) this.pendingMoves.push({ from, to });
+			return;
+		}
+		if (to === null) this.cache.remove(from);
+		else this.cache.rename(from, to);
+		this.saveCacheSoon();
+	}
+
 	/** Load the cache once; every later call is free. */
 	private async ensureLoaded(): Promise<void> {
 		if (this.loaded || this.stopped) return;
 		this.loading ??= this.cache.load().then(() => {
-			if (!this.stopped) this.loaded = true;
+			if (this.stopped) return;
+			this.loaded = true;
+			const moves = this.pendingMoves;
+			this.pendingMoves = [];
+			for (const { from, to } of moves) this.moveEntry(from, to);
 		});
 		await this.loading;
 	}
