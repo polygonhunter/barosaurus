@@ -159,6 +159,13 @@ export default class BarosaurusPlugin extends Plugin {
 				this.saveFrecencySoon();
 			}),
 		);
+		// Going to the background is the last reliable moment on mobile: a
+		// killed app never runs onunload, and the frecency debounce waits 30 s.
+		this.registerDomEvent(activeDocument, "visibilitychange", () => {
+			if (activeDocument.visibilityState !== "hidden") return;
+			this.saveDataSoon.run();
+			this.saveFrecencySoon.run();
+		});
 		this.registerEvent(
 			this.app.vault.on("rename", (file, oldPath) => {
 				// Same namespace on both sides, or a rename orphans the history.
