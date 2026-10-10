@@ -158,7 +158,12 @@ export function extractExternalLinks(
 		taken.push([offset, offset + full.length]);
 		if (bang === "!") continue; // image embed, not a link
 		if (url === undefined) continue;
-		links.push({ url, text: (text ?? "").trim(), offset, line: 0 });
+		// The title is read from the UNMASKED source at the same offsets:
+		// masking is only for finding links, and `[\`npm ci\` docs](…)` would
+		// otherwise lose its code words or end up with no title at all.
+		const titleStart = offset + (bang?.length ?? 0) + 1;
+		const title = source.slice(titleStart, titleStart + (text ?? "").length).replace(/`/g, "");
+		links.push({ url, text: title.trim(), offset, line: 0 });
 	}
 
 	for (const match of markdown.matchAll(AUTOLINK_RE)) {

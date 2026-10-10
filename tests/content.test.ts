@@ -27,6 +27,16 @@ describe("extractExternalLinks", () => {
 		]);
 	});
 
+	it("keeps code words in a link title instead of blanking them", () => {
+		const links = extractExternalLinks(
+			"[`npm ci` docs](https://docs.npmjs.com/cli) and [`foo`](https://foo.test)",
+		);
+		expect(links.map((link) => [link.text, link.url])).toEqual([
+			["npm ci docs", "https://docs.npmjs.com/cli"],
+			["foo", "https://foo.test"],
+		]);
+	});
+
 	it("ignores URLs in inline code and in code blocks", () => {
 		const md = "use `curl https://api.test/v1`\n```\nhttps://in.fence\n```\nhttps://real.test";
 		const fenceStart = md.indexOf("```\n");
