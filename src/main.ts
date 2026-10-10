@@ -325,11 +325,26 @@ export default class BarosaurusPlugin extends Plugin {
 		// its own document, and a listener on the main one never hears a key
 		// pressed there. Popouts opened later are picked up as they open.
 		this.registerDomEvent(activeWindow.document, "keyup", this.onShiftKeyup);
+		// Popouts are tracked by hand rather than through registerDomEvent:
+		// that one only lets go on unload, so every popout ever opened kept its
+		// closed document referenced for the rest of the session.
+		const popouts = new Set<Document>();
 		this.registerEvent(
 			this.app.workspace.on("window-open", (win) => {
-				this.registerDomEvent(win.doc, "keyup", this.onShiftKeyup);
+				win.doc.addEventListener("keyup", this.onShiftKeyup);
+				popouts.add(win.doc);
 			}),
 		);
+		this.registerEvent(
+			this.app.workspace.on("window-close", (win) => {
+				win.doc.removeEventListener("keyup", this.onShiftKeyup);
+				popouts.delete(win.doc);
+			}),
+		);
+		this.register(() => {
+			for (const doc of popouts) doc.removeEventListener("keyup", this.onShiftKeyup);
+			popouts.clear();
+		});
 	}
 
 	private readonly onShiftKeyup = (event: KeyboardEvent): void => {
