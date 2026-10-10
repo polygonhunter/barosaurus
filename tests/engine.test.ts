@@ -203,3 +203,11 @@ describe("extracted-text fingerprint", () => {
 		expect(engine.textKeyOf("missing.png")).toBeUndefined();
 	});
 });
+
+describe("typo tolerance", () => {
+	it("forgives one typo in a four-letter word, as in 1.0", () => {
+		const engine = makeEngine();
+		engine.upsert(doc({ id: "a.md", body: "the bake sale" }));
+		expect(engine.search("bame").map((hit) => hit.id)).toEqual(["a.md"]);
+	});
+});

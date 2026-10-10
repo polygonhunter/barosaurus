@@ -43,9 +43,12 @@ function miniSearchOptions(weights: FieldWeights): Options<IndexedDoc> {
 		searchOptions: {
 			prefix: (term) => term.length >= 2,
 			// Fuzzy expansion is the expensive part of a query over the whole
-			// vault's text. Short terms get none (prefix already covers them),
-			// and 0.15 keeps it to one edit until a term is ten letters long.
-			fuzzy: (term) => (term.length >= 5 ? 0.15 : false),
+			// vault's text, but it is also what forgives a typo — and how many
+			// it forgives is search behaviour users have learned. Kept as in
+			// 1.0: one edit from four letters, two from eight. The cost is
+			// handled by the streaming debounce instead, which runs the
+			// full-text pass only once typing pauses.
+			fuzzy: (term) => (term.length >= 4 ? 0.2 : false),
 			combineWith: "AND",
 			boost: { ...weights },
 		},
