@@ -9,7 +9,7 @@ import {
 	type PaneType,
 	type TAbstractFile,
 } from "obsidian";
-import { togglePinned, toggleHidden } from "../core/actions";
+import { isPinned, togglePinned, toggleHidden } from "../core/actions";
 import {
 	ISSUES_ACTION,
 	ISSUES_URL,
@@ -64,7 +64,7 @@ export interface ExecuteHost {
 	app: App;
 	/** Called after a successful pick so frecency can count it. */
 	remember: (id: string) => void;
-	/** Ids pinned to the top of the list, keyed by `item.id`. */
+	/** Ids pinned to the top of the list, keyed as `togglePinned` keys them. */
 	pins?: () => readonly string[];
 	setPins?: (next: string[]) => void;
 	/** Raw command ids the user hid from this bar. */
@@ -410,12 +410,8 @@ async function moveTo(app: App, item: OmniItem, folder: string): Promise<void> {
 
 /** Frontmatter tags, through the public `processFrontMatter` (@since 1.4.4). */
 async function addTag(app: App, item: OmniItem, rawTag: string): Promise<void> {
-	const path = pathOf(item);
-	const file = path === null ? null : app.vault.getFileByPath(path);
-	if (file === null) {
-		new Notice("Barosaurus: that file is gone");
-		return;
-	}
+	const file = fileFor(app, item);
+	if (file === null) return;
 	const tag = rawTag.trim().replace(/^#/, "");
 	if (tag.length === 0) return;
 	await app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
@@ -480,12 +476,20 @@ async function removeProperty(app: App, item: OmniItem, rawKey: string): Promise
 	new Notice(existed ? `Removed ${key}` : `No ${key} on this note`);
 }
 
-/** The file an item points at, or null with the notice already shown. */
+/**
+ * The note whose frontmatter an action edits, or null with the notice already
+ * shown. Markdown only: processFrontMatter "must be a Markdown file", and on a
+ * canvas or a PDF it would write YAML over the file's own content.
+ */
 function fileFor(app: App, item: OmniItem): TFile | null {
 	const path = pathOf(item);
 	const file = path === null ? null : app.vault.getFileByPath(path);
 	if (file === null) {
 		new Notice("Barosaurus: that file is gone");
+		return null;
+	}
+	if (file.extension !== "md") {
+		new Notice("Barosaurus: only notes have properties");
 		return null;
 	}
 	return file;
@@ -647,8 +651,8 @@ function assignHotkey(app: App, item: OmniItem): void {
 // ------------------------------------------------------------ list keeping
 
 /**
- * ⌘P. Keyed by `item.id` — the same key the ranker reads and the same key
- * `fileItemId()` mints for files, so a pin set here is a pin the ranking sees.
+ * ⌘P. Keyed the way togglePinned keys it — the same key the ranker reads, so a
+ * pin set here is a pin the ranking sees, whichever row of a file was pinned.
  */
 function togglePin(host: ExecuteHost, item: OmniItem): ActionOutcome {
 	const read = host.pins;
@@ -658,7 +662,7 @@ function togglePin(host: ExecuteHost, item: OmniItem): ActionOutcome {
 		return "stay";
 	}
 	const before = read();
-	const wasPinned = before.includes(item.id);
+	const wasPinned = isPinned(before, item.id);
 	write(togglePinned(before, item.id));
 	new Notice(wasPinned ? `Unpinned “${item.title}”` : `Pinned “${item.title}”`);
 	return "stay";

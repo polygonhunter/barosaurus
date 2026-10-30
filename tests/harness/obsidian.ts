@@ -231,7 +231,10 @@ export class Component {
 }
 
 export const MarkdownRenderer = {
-	async render(): Promise<void> {},
+	/** Plain text, no markdown — enough for the preview's highlighter to walk. */
+	async render(_app: unknown, markdown: string, el: HTMLElement): Promise<void> {
+		el.textContent = markdown;
+	},
 };
 
 export class MarkdownView extends Component {}

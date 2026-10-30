@@ -37,6 +37,29 @@ export function bumpFrecency(map: Record<string, FrecencyEntry>, key: string, no
 	}
 }
 
+/**
+ * Two bumps of one key this close together are one open counted twice: a
+ * file picked in the bar is remembered by the bar AND fires `file-open`.
+ */
+export const SAME_OPEN_WINDOW_MS = 1_500;
+
+/**
+ * Bump unless the same key was bumped a moment ago. False when it was skipped,
+ * so the caller can leave data.json alone.
+ */
+export function bumpFrecencyOnce(
+	map: Record<string, FrecencyEntry>,
+	key: string,
+	now: number,
+): boolean {
+	const entry = map[key];
+	if (entry !== undefined && now >= entry.last && now - entry.last < SAME_OPEN_WINDOW_MS) {
+		return false;
+	}
+	bumpFrecency(map, key, now);
+	return true;
+}
+
 /** Count decayed by elapsed half-lives — old favourites fade, never snap. */
 export function frecencyScore(
 	entry: FrecencyEntry,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acronym, fold, foldedWords, processTerm } from "../src/core/normalize";
+import { acronym, findFolded, fold, foldedWords, processTerm } from "../src/core/normalize";
 
 describe("fold", () => {
 	it("lowercases and trims", () => {
@@ -86,5 +86,31 @@ describe("acronym", () => {
 		expect(acronym("Bold")).toBe("b");
 		expect(acronym("")).toBe("");
 		expect(acronym("!!!")).toBe("");
+	});
+});
+
+describe("findFolded — folded matching, raw offsets", () => {
+	it("finds an umlaut word typed without the umlaut, at its raw offsets", () => {
+		const text = "Der Überblick hier";
+		expect(findFolded(text, ["uberblick"])).toEqual([4, 13]);
+	});
+
+	it("maps ß → ss back onto the one raw character", () => {
+		const text = "Die Straße";
+		const range = findFolded(text, ["strasse"]);
+		expect(range).not.toBeNull();
+		const [start, end] = range ?? [0, 0];
+		expect(text.slice(start, end)).toBe("Straße");
+	});
+
+	it("keeps a decomposed combining mark with its letter", () => {
+		const text = "café au lait";
+		const [start, end] = findFolded(text, ["cafe"]) ?? [0, 0];
+		expect(text.slice(start, end)).toBe("café");
+	});
+
+	it("returns the earliest of several words, or null", () => {
+		expect(findFolded("beta alpha", ["alpha", "beta"])).toEqual([0, 4]);
+		expect(findFolded("nothing here", ["absent"])).toBeNull();
 	});
 });

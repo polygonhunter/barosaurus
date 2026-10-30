@@ -77,6 +77,15 @@ function isPdf(file: TFile): boolean {
 	return file.extension.toLowerCase() === "pdf";
 }
 
+/** Could the cache hold an entry for this path — an image or a PDF? */
+function isExtractablePath(path: string): boolean {
+	const name = path.slice(path.lastIndexOf("/") + 1);
+	const dot = name.lastIndexOf(".");
+	if (dot <= 0) return false;
+	const extension = name.slice(dot + 1).toLowerCase();
+	return extension === "pdf" || kindForExtension(extension) === "image";
+}
+
 export class OcrPipeline implements OcrController {
 	private readonly queue = new OcrQueue(idleScheduler(window));
 	private readonly cache: OcrCache;
@@ -169,7 +178,13 @@ export class OcrPipeline implements OcrController {
 	/** Rename (`to` set) or delete (`to` null) a cache entry, now or once loaded. */
 	private moveEntry(from: string, to: string | null): void {
 		if (!this.loaded) {
-			if (!this.stopped) this.pendingMoves.push({ from, to });
+			// Only what the cache can hold, and one entry per file however often
+			// it moves: with both switches off the cache may never load, and
+			// every rename and delete in the vault used to pile up here.
+			if (this.stopped || !isExtractablePath(from)) return;
+			const chained = this.pendingMoves.find((move) => move.to === from);
+			if (chained !== undefined) chained.to = to;
+			else this.pendingMoves.push({ from, to });
 			return;
 		}
 		if (to === null) this.cache.remove(from);

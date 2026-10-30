@@ -1,12 +1,13 @@
 import { apiVersion, debounce, Notice, Platform, Plugin } from "obsidian";
 import { SearchEngine } from "./core/engine";
 import {
-	bumpFrecency,
+	bumpFrecencyOnce,
 	frecencyBoost,
 	pruneFrecency,
 	renameFrecency,
 	type FrecencyEntry,
 } from "./core/frecency";
+import { remapPins } from "./core/actions";
 import { supportUrl, type SupportInfo } from "./core/catalog";
 import { contextBoosts } from "./core/context";
 import { DEFAULT_WEIGHTS } from "./core/index-types";
@@ -94,7 +95,7 @@ const SCOPED_ENTRIES: ReadonlyArray<{ id: string; name: string; query: string }>
 ];
 
 export default class BarosaurusPlugin extends Plugin {
-	settings: BarosaurusSettings = { ...DEFAULT_SETTINGS };
+	settings: BarosaurusSettings = structuredClone(DEFAULT_SETTINGS);
 	data: PersistentData = structuredClone(DEFAULT_DATA);
 	ocr: OcrPipeline | undefined;
 
@@ -151,7 +152,8 @@ export default class BarosaurusPlugin extends Plugin {
 			this.app.workspace.on("file-open", (file) => {
 				if (!file) return;
 				const now = Date.now();
-				bumpFrecency(this.data.frecency, fileItemId(file.path), now);
+				// Once per open: a pick in the bar is remembered there too.
+				if (!bumpFrecencyOnce(this.data.frecency, fileItemId(file.path), now)) return;
 				pruneFrecency(this.data.frecency, now);
 				// Every tab switch fires this. Rewriting data.json (and handing
 				// it to sync) every two seconds of browsing is not worth it for
@@ -169,9 +171,24 @@ export default class BarosaurusPlugin extends Plugin {
 		this.registerEvent(
 			this.app.vault.on("rename", (file, oldPath) => {
 				// Same namespace on both sides, or a rename orphans the history.
+				const hadHistory = fileItemId(oldPath) in this.data.frecency;
 				renameFrecency(this.data.frecency, fileItemId(oldPath), fileItemId(file.path));
-				const pin = this.settings.pins.indexOf(fileItemId(oldPath));
-				if (pin >= 0) this.settings.pins[pin] = fileItemId(file.path);
+				// Every pin that carries the path — headings, blocks, folders and
+				// everything inside a renamed folder, not only the file itself.
+				const pins = remapPins(this.settings.pins, oldPath, file.path);
+				if (pins !== null) this.settings.pins = pins;
+				// Most renames touch nothing we store; rewriting data.json (and
+				// handing it to sync) for those was pure churn.
+				if (hadHistory || pins !== null) this.saveDataSoon();
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				// A pin on something deleted can never be shown again, but it
+				// kept counting in "N pinned" for good.
+				const pins = remapPins(this.settings.pins, file.path, null);
+				if (pins === null) return;
+				this.settings.pins = pins;
 				this.saveDataSoon();
 			}),
 		);
@@ -201,7 +218,9 @@ export default class BarosaurusPlugin extends Plugin {
 				if (this.settings.ocrEnabled || this.settings.indexPdfText) {
 					await this.ocr?.enable();
 				}
-			})();
+			})().catch((error: unknown) => {
+				console.error("Barosaurus: failed to start the index", error);
+			});
 		});
 	}
 
@@ -247,7 +266,9 @@ export default class BarosaurusPlugin extends Plugin {
 				// its title must share one frecency key, or learning splits in
 				// two and neither half ever gets strong.
 				const key = frecencyKeyFor(id);
-				bumpFrecency(this.data.frecency, key, now);
+				// Once per pick: opening a file fires `file-open`, which has
+				// counted it already.
+				if (!bumpFrecencyOnce(this.data.frecency, key, now)) return;
 				pruneFrecency(this.data.frecency, now);
 				this.saveDataSoon();
 			},
@@ -437,7 +458,9 @@ export default class BarosaurusPlugin extends Plugin {
 
 	async loadSettings(): Promise<void> {
 		const raw = (await this.loadData()) as Partial<StoredShape> | null;
-		this.settings = { ...DEFAULT_SETTINGS, ...(raw?.settings ?? {}) };
+		// Cloned, not spread: a spread shares the default ARRAYS, and the first
+		// "Add snippet" on a fresh install pushed into DEFAULT_SETTINGS itself.
+		this.settings = { ...structuredClone(DEFAULT_SETTINGS), ...(raw?.settings ?? {}) };
 		this.settings.excludedFolders = cleanExcludedFolders(this.settings.excludedFolders);
 		this.data = { ...structuredClone(DEFAULT_DATA), ...(raw?.data ?? {}) };
 	}
@@ -447,8 +470,12 @@ export default class BarosaurusPlugin extends Plugin {
 	}
 
 	readonly saveDataSoon = debounce(() => void this.saveSettings(), 2_000, true);
-	/** Frecency from plain file opens: same file, much lazier schedule. */
-	private readonly saveFrecencySoon = debounce(() => void this.saveSettings(), 30_000, true);
+	/**
+	 * Frecency from plain file opens: same file, much lazier schedule. NOT
+	 * reset by later calls — every tab switch calls it, and a timer that
+	 * restarts on each one never fires while the user is actually working.
+	 */
+	private readonly saveFrecencySoon = debounce(() => void this.saveSettings(), 30_000, false);
 }
 
 // contextBoosts is re-exported so the modal can apply it without importing

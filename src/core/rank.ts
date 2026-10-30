@@ -2,6 +2,7 @@ import { acronym, fold, foldedWords } from "./normalize";
 import type { BarContext, Candidate, OmniItem, TypeWeights } from "./types";
 import {
 	DEFAULT_TYPE_WEIGHTS,
+	frecencyKeyFor,
 	TIER_ACRONYM,
 	TIER_CONTIGUOUS,
 	TIER_EXACT,
@@ -132,9 +133,11 @@ export function rankCandidates(
 		const tier = tierOf(item, foldedQuery, queryWords);
 		const score =
 			norm * (weights[item.source] ?? 0.5) +
-			(frecency[item.id] ?? 0) +
+			// Frecency and pins are stored under frecencyKeyFor(): a full-text
+			// hit reads the history of the file it is, not of its own row id.
+			(frecency[frecencyKeyFor(item.id)] ?? 0) +
 			(contextBoost[item.id] ?? 0) +
-			(pinned.has(item.id) ? PIN_BOOST : 0);
+			(pinned.has(item.id) || pinned.has(frecencyKeyFor(item.id)) ? PIN_BOOST : 0);
 		return { item, tier, score };
 	});
 

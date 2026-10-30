@@ -9,6 +9,7 @@ import {
 } from "../core/style";
 import type { ArgumentPicker, OmniItem, TileSpec } from "../core/types";
 import { fuzzyFactory, orderByMatch, type Scorable } from "../sources/files";
+import { NON_PROPERTY_KEYS } from "../sources/properties";
 import { getAllVaultTags, listCommands } from "./unsafe";
 
 /**
@@ -65,6 +66,12 @@ export interface BarPage {
 	rows(query: string): OmniItem[];
 	/** A row was chosen here. */
 	choose(item: OmniItem, bar: BarSurface): void;
+	/**
+	 * The level only carries a value the user already gave (a property named
+	 * by the row that started the flow). Backing out of the level above it
+	 * backs out of this one too, rather than stopping on an empty list.
+	 */
+	skipOnBack?: boolean;
 }
 
 // ------------------------------------------------------------------ rows
@@ -209,7 +216,6 @@ function tagRows(entries: Array<Scorable<OmniItem>>, query: string): OmniItem[] 
  *
  * `position` is the cache's own bookkeeping, not a user property, so it goes.
  */
-const NON_PROPERTY_KEYS: ReadonlySet<string> = new Set(["position"]);
 
 export function vaultPropertyKeys(app: App): Array<{ key: string; count: number }> {
 	const counts = new Map<string, number>();

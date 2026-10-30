@@ -96,11 +96,28 @@ export function excerptAround(
 			if (index !== -1 && (focus === -1 || index < focus)) focus = index;
 		}
 	}
+	if (focus === -1) {
+		// Umlauts and the like: the folded word is not in the raw text, but the
+		// line it sits on can still be found folded, as the index found it.
+		const hit = findMatchLine(body, queryWords.map(fold));
+		if (hit !== null) focus = lineOffset(body, hit);
+	}
 	if (focus === -1) return body.slice(0, maxChars);
 
 	const start = body.lastIndexOf("\n", Math.max(0, focus - maxChars / 3));
 	const end = body.indexOf("\n", focus + maxChars / 2);
 	return body.slice(start === -1 ? 0 : start + 1, end === -1 ? body.length : end);
+}
+
+/** Character offset of the start of 0-based `line`. */
+function lineOffset(body: string, line: number): number {
+	let at = 0;
+	for (let i = 0; i < line; i++) {
+		const next = body.indexOf("\n", at);
+		if (next === -1) return at;
+		at = next + 1;
+	}
+	return at;
 }
 
 /**

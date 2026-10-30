@@ -62,8 +62,8 @@ export function parsePropertyAction(
  */
 const COMMON_KEYS = ["author", "status", "tags", "aliases", "date", "due", "project", "type"];
 
-/** Cache bookkeeping, not a user property. */
-const NON_PROPERTY_KEYS: ReadonlySet<string> = new Set(["position"]);
+/** Cache bookkeeping, not a user property. Shared with the property picker. */
+export const NON_PROPERTY_KEYS: ReadonlySet<string> = new Set(["position"]);
 
 /**
  * The keys the active note already has, ahead of the common ones. "Set
@@ -88,10 +88,18 @@ function keysFor(ctx: SourceContext, path: string): string[] {
 export const propertiesSource: Source = {
 	id: "properties",
 
-	/** Only with a note open: the whole point is that it needs no target. */
+	/**
+	 * Only with a note open: the whole point is that it needs no target. A
+	 * NOTE, not any file — a PDF or a canvas is the active file too, and
+	 * frontmatter written into one corrupts it.
+	 */
 	appliesTo(ctx: SourceContext): boolean {
+		const active = ctx.bar.activeFile;
 		return (
-			ctx.query.scope === "all" && ctx.query.text.trim().length > 0 && ctx.bar.activeFile !== null
+			ctx.query.scope === "all" &&
+			ctx.query.text.trim().length > 0 &&
+			active !== null &&
+			active.toLowerCase().endsWith(".md")
 		);
 	},
 

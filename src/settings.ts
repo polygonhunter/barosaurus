@@ -414,7 +414,10 @@ export class BarosaurusSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Date format")
-			.setDesc("Used by the “insert date” entry. Supports YYYY, MM, DD, HH and mm.")
+			.setDesc(
+				"Used by the “insert date” entry. Supports YYYY, YY, MMMM, MMM, MM, M, DD, D, dddd, ddd, " +
+					"HH, H, hh, h, mm, m, ss, s and A or a; text in [brackets] is kept as written.",
+			)
 			.addText((text) =>
 				text
 					.setPlaceholder("YYYY-MM-DD")

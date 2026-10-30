@@ -138,8 +138,8 @@ listing only non-deferred leaves and letting the files source cover the rest.
 **Assumption:** re-dispatching a synthetic `ArrowDown` on the input moves Obsidian's own
 selection, so the bar can skip over a group label by dispatching twice.
 
-There is no public setter for the highlighted suggestion, and `src/ui/unsafe.ts` exposes
-`chooser.useSelectedItem` but no `setSelectedItem`. So `navigate()` swallows the real
+There is no public setter for the highlighted suggestion, and `src/ui/unsafe.ts` has no
+chooser accessor at all. So `navigate()` swallows the real
 arrow key, finds the next row that is a real result, and re-dispatches exactly as many
 synthetic ones as the gap between the two — one press, one item, however many labels are
 in between. A MutationObserver covers the selections the bar did not make: the first
@@ -158,7 +158,7 @@ ended up. `tests/ui/bar-groups.test.ts` holds the boundary cases.
 bottom and back up. The highlight must never rest on a group label, must not skip a real
 row, and must not stutter or flicker. Repeat with `⌃N` / `⌃P`.
 
-**If it fails:** add `setSelectedItem` to the chooser accessor in `src/ui/unsafe.ts` and
+**If it fails:** add a guarded `chooser.setSelectedItem` accessor to `src/ui/unsafe.ts` and
 swap the one line in `navigate()`. If the internal is absent too, fall back to rendering
 group labels as a non-row element (a sticky heading outside the list), which costs the
 grouped-list look but removes the problem entirely.

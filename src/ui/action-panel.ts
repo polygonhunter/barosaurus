@@ -284,6 +284,7 @@ export function createActionController(host: ActionHost): ActionController {
 					emptyText: "",
 					rows: () => [],
 					choose: () => undefined,
+					skipOnBack: true,
 				},
 				"",
 			);

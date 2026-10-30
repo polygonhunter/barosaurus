@@ -38,6 +38,12 @@ describe("excerptAround", () => {
 	it("returns short bodies whole", () => {
 		expect(excerptAround("short", ["x"])).toBe("short");
 	});
+
+	it("centres on a word whose raw form only matches folded", () => {
+		const filler = Array.from({ length: 300 }, (_, i) => `filler line ${i}`).join("\n");
+		const body = `${filler}\nDas Überblick-Kapitel`;
+		expect(excerptAround(body, ["uberblick"])).toContain("Überblick");
+	});
 });
 
 describe("excerptFollowsWords", () => {

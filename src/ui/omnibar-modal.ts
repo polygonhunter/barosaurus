@@ -1,5 +1,6 @@
 import {
 	Keymap,
+	Platform,
 	prepareFuzzySearch,
 	SuggestModal,
 	type App,
@@ -267,11 +268,20 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	/** True while re-dispatching our own navigation keys, so we let them pass. */
 	private synthetic = false;
 
-	/** ⌘1–9 chips exist always and are revealed only while the modifier is held. */
+	/**
+	 * ⌘1–9 chips exist always and are revealed only while the modifier is held.
+	 * Only the key "Mod" actually means here: on a Mac ⌃ is the ⌃N/⌃P
+	 * navigation key, and on Windows and Linux the Win key picks nothing.
+	 */
 	private readonly modHeld = (event: KeyboardEvent) => {
-		if (event.key === "Meta" || event.key === "Control") {
+		if (event.key === (Platform.isMacOS ? "Meta" : "Control")) {
 			this.modalEl.toggleClass("mods-held", event.type === "keydown");
 		}
+	};
+
+	/** A modifier released in another app (⌘-Tab) sends no keyup here. */
+	private readonly modsReleased = () => {
+		this.modalEl.removeClass("mods-held");
 	};
 
 	constructor(app: App, options: OmnibarOptions) {
@@ -339,6 +349,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		this.inputWin.setTimeout(() => this.modalEl.removeClass("is-entering"), ENTER_DURATION_MS);
 		this.inputWin.addEventListener("keydown", this.modHeld);
 		this.inputWin.addEventListener("keyup", this.modHeld);
+		this.inputWin.addEventListener("blur", this.modsReleased);
 		this.renderBreadcrumbs();
 		this.pill.mount(this.resultContainerEl);
 		if (this.options.initialQuery !== undefined && this.options.initialQuery.length > 0) {
@@ -351,6 +362,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 	onClose(): void {
 		this.inputWin.removeEventListener("keydown", this.modHeld);
 		this.inputWin.removeEventListener("keyup", this.modHeld);
+		this.inputWin.removeEventListener("blur", this.modsReleased);
 		this.inputEl.removeEventListener("keydown", this.onArrowCapture, true);
 		this.selectionObserver.disconnect();
 		this.pill.destroy();
@@ -772,6 +784,29 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		});
 	}
 
+	/**
+	 * Enter, click, ⌘↵ and ⌘1–9 all arrive here, and SuggestModal's own
+	 * version closes the bar around onChooseSuggestion. That is right for a
+	 * destination and fatal for a flow: a pick on a pushed level — or on a
+	 * main-list row that starts one — pushes the next level into a bar that is
+	 * already gone. Those picks keep the bar open; the flow closes it itself
+	 * once the action has run (see action-panel.ts `finish`).
+	 */
+	selectSuggestion(value: OmniRow, evt: MouseEvent | KeyboardEvent): void {
+		if (this.startsOrContinuesFlow(value)) {
+			this.onChooseSuggestion(value, evt);
+			return;
+		}
+		super.selectSuggestion(value, evt);
+	}
+
+	/** True when choosing `row` belongs to the page flow rather than the root. */
+	private startsOrContinuesFlow(row: OmniRow): boolean {
+		if (this.pages.length > 0) return true;
+		if (this.options.actions === undefined || isGroupHeader(row)) return false;
+		return row.kind === "action" && parsePropertyAction(row.actionId) !== null;
+	}
+
 	onChooseSuggestion(row: OmniRow, evt: MouseEvent | KeyboardEvent): void {
 		if (isGroupHeader(row)) return; // a label is not a target
 
@@ -789,10 +824,10 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		// rather than fall through to onChoose, which runs actions with no
 		// arguments at all.
 		const actions = this.options.actions;
-		if (actions !== undefined && !isGroupHeader(row) && row.kind === "action") {
+		if (actions !== undefined && row.kind === "action") {
 			const parsed = parsePropertyAction(row.actionId);
 			if (parsed !== null) {
-				this.options.actions?.rememberQuery(this.inputEl.value);
+				actions.rememberQuery(this.inputEl.value);
 				this.historyIndex = -1;
 				actions.startOnPath(this.surface, parsed.action, parsed.path, parsed.key ?? undefined);
 				return;
@@ -800,7 +835,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		}
 
 		// Only a query that led somewhere is worth recalling.
-		this.options.actions?.rememberQuery(this.inputEl.value);
+		actions?.rememberQuery(this.inputEl.value);
 		this.historyIndex = -1;
 		// Straight through: isModEvent returns PaneType | boolean, and that is
 		// exactly what getLeaf()/openLinkText() accept. Narrowing it to "tab"
@@ -816,7 +851,7 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 		if (actions === undefined || !isRoot(this.stack)) return;
 		const item = this.activeItem();
 		if (item === null) return;
-		this.options.actions?.rememberQuery(this.inputEl.value);
+		actions.rememberQuery(this.inputEl.value);
 		actions.openPanel(this.surface, item, this.options.context?.() ?? EMPTY_CONTEXT);
 	}
 
@@ -974,7 +1009,9 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 			this.preview.clear();
 			return;
 		}
-		void this.preview.show(item, foldedWords(this.inputEl.value));
+		// The parsed text, not the raw input: `-draft`, `p:projects` and `#tag`
+		// are operators, and highlighting them would mark what was excluded.
+		void this.preview.show(item, foldedWords(parseQuery(this.inputEl.value).text));
 	}
 
 	private rowEls(): HTMLElement[] {
@@ -1019,13 +1056,24 @@ export class OmnibarModal extends SuggestModal<OmniRow> {
 
 	/** Pop one level, restoring the query typed there. False at the root. */
 	popPage(): boolean {
+		if (!this.dropLevel()) return false;
+		// A level that only carries a value has nothing to go back TO: leaving
+		// the level above it leaves it too, or Esc lands on an empty list.
+		while (this.pages[this.pages.length - 1]?.skipOnBack === true && this.dropLevel()) {
+			/* keep unwinding */
+		}
+		this.historyIndex = -1;
+		this.applyLevel();
+		this.setQuery(current(this.stack).query);
+		return true;
+	}
+
+	/** Remove the top level from the stack and the page list. False at the root. */
+	private dropLevel(): boolean {
 		const next = pop(this.stack);
 		if (next === this.stack) return false;
 		this.stack = next;
 		this.pages.pop();
-		this.historyIndex = -1;
-		this.applyLevel();
-		this.setQuery(current(this.stack).query);
 		return true;
 	}
 

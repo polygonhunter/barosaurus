@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
 	bumpFrecency,
+	bumpFrecencyOnce,
 	frecencyBoost,
 	frecencyScore,
 	HALF_LIFE_COMMANDS_MS,
 	HALF_LIFE_FILES_MS,
 	pruneFrecency,
 	renameFrecency,
+	SAME_OPEN_WINDOW_MS,
 	topFrecent,
 	type FrecencyEntry,
 } from "../src/core/frecency";
@@ -194,5 +196,27 @@ describe("renameFrecency", () => {
 		renameFrecency(map, "missing.md", "new.md");
 		expect(map).toEqual({ "a.md": { count: 1, last: 0 } });
 		expect(map["new.md"]).toBeUndefined();
+	});
+});
+
+describe("bumpFrecencyOnce — one open is one count", () => {
+	it("skips a second bump of the same key a moment later", () => {
+		const map: Record<string, FrecencyEntry> = {};
+		expect(bumpFrecencyOnce(map, "file:a.md", 10_000)).toBe(true);
+		expect(bumpFrecencyOnce(map, "file:a.md", 10_200)).toBe(false);
+		expect(map["file:a.md"]?.count).toBe(1);
+	});
+
+	it("counts a later open again", () => {
+		const map: Record<string, FrecencyEntry> = {};
+		bumpFrecencyOnce(map, "file:a.md", 10_000);
+		expect(bumpFrecencyOnce(map, "file:a.md", 10_000 + SAME_OPEN_WINDOW_MS)).toBe(true);
+		expect(map["file:a.md"]?.count).toBe(2);
+	});
+
+	it("never holds back a different key", () => {
+		const map: Record<string, FrecencyEntry> = {};
+		bumpFrecencyOnce(map, "file:a.md", 10_000);
+		expect(bumpFrecencyOnce(map, "command:x", 10_100)).toBe(true);
 	});
 });

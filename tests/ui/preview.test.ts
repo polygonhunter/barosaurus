@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { TFile, type App } from "obsidian";
-import { excerptAround, PreviewPane, stripFrontmatter } from "../../src/ui/preview";
+import { excerptAround, PreviewPane, previewTargetFor, stripFrontmatter } from "../../src/ui/preview";
+import type { OmniItem } from "../../src/core/types";
 
 /** The preview's text handling — no rendering involved. */
 
@@ -24,6 +25,25 @@ describe("stripFrontmatter", () => {
 		const targetLine = note.split("\n").indexOf("## Target");
 		const { body, lines } = stripFrontmatter(note);
 		expect(excerptAround(body, [], targetLine - lines)).toMatch(/^## Target/m);
+	});
+});
+
+describe("previewTargetFor", () => {
+	it("previews a full-text hit on a link as the note it sits in, at its line", () => {
+		const hit = {
+			id: "fulltext:Notes/a.md",
+			kind: "file",
+			source: "fulltext",
+			group: "fulltext",
+			title: "example.com",
+			aliases: [],
+			tile: { kind: "icon", icon: "link" },
+			path: "Notes/a.md",
+			resultKind: "link",
+			mtime: 0,
+			line: 7,
+		} as OmniItem;
+		expect(previewTargetFor(hit)).toEqual({ path: "Notes/a.md", kind: "note", line: 7 });
 	});
 });
 
@@ -73,6 +93,14 @@ describe("PreviewPane", () => {
 		const second = preview.showTarget({ path: "Notes/a.md", kind: "note", line: 2 });
 		await Promise.all([first, second]);
 		expect(reads).toEqual(["Notes/a.md"]);
+		preview.destroy();
+	});
+
+	it("marks a word with an umlaut or ß however it was typed", async () => {
+		const { preview, el } = pane("Die Straße führt zum Überblick.");
+		await preview.showTarget({ path: "Notes/a.md", kind: "note" }, ["strasse", "uberblick"]);
+		const marks = Array.from(el.querySelectorAll("mark")).map((mark) => mark.textContent);
+		expect(marks).toEqual(["Straße", "Überblick"]);
 		preview.destroy();
 	});
 

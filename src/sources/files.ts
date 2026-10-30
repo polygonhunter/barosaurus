@@ -46,18 +46,31 @@ export const fuzzyFactory: MatchFactory = (query) => prepareFuzzySearch(query);
 export const simpleFactory: MatchFactory = (query) => prepareSimpleSearch(query);
 
 /**
- * The cheap prefilter that runs BEFORE any prepared search: are the query's
- * characters present, in order, in the text? One pass, no allocation, and a
- * strict superset of what fuzzy or simple search can match — so it costs no
- * recall while removing almost the whole corpus from the expensive path.
+ * The cheap prefilter that runs BEFORE any prepared search: are each query
+ * WORD's characters present, in order, in the text? A strict superset of what
+ * fuzzy or simple search can match — so it costs no recall while removing
+ * almost the whole corpus from the expensive path.
+ *
+ * Word by word, not the query as one string: simple search takes
+ * "space-separated words" in any order, and requiring the whole query in
+ * order threw "notes meeting" away before it could ever match "Meeting notes".
  */
 export function couldMatch(foldedText: string, foldedQuery: string): boolean {
-	if (foldedQuery.length === 0) return true;
+	return couldMatchWords(foldedText, foldedQuery.split(" "));
+}
+
+/** `couldMatch` with the query already split, for loops over a whole corpus. */
+function couldMatchWords(foldedText: string, words: readonly string[]): boolean {
+	return words.every((word) => isSubsequence(word, foldedText));
+}
+
+/** One pass, no allocation. */
+function isSubsequence(needle: string, haystack: string): boolean {
 	let at = 0;
-	for (let i = 0; i < foldedText.length && at < foldedQuery.length; i += 1) {
-		if (foldedText[i] === foldedQuery[at]) at += 1;
+	for (let i = 0; i < haystack.length && at < needle.length; i += 1) {
+		if (haystack[i] === needle[at]) at += 1;
 	}
-	return at === foldedQuery.length;
+	return at === needle.length;
 }
 
 /** One entry to match: the value to keep, plus every FOLDED term it answers to. */
@@ -86,11 +99,12 @@ export function orderByMatch<T>(
 	if (foldedQuery.length === 0) return entries.slice(0, limit).map((entry) => entry.value);
 
 	const match = factory(foldedQuery);
+	const words = foldedQuery.split(" ");
 	const scored: Array<{ value: T; score: number }> = [];
 	for (const entry of entries) {
 		let best: number | null = null;
 		for (const term of entry.terms) {
-			if (!couldMatch(term, foldedQuery)) continue;
+			if (!couldMatchWords(term, words)) continue;
 			const result = match(term);
 			if (result === null) continue;
 			if (best === null || result.score > best) best = result.score;

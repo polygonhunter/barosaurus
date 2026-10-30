@@ -8,6 +8,8 @@ import {
 	type TFile,
 } from "obsidian";
 import { excerptAround, excerptFollowsWords } from "../core/excerpt";
+import { kindForExtension } from "../core/index-types";
+import { findFolded, fold } from "../core/normalize";
 import type { OmniItem, ResultKind } from "../core/types";
 import { iconForResultKind } from "./icons";
 
@@ -52,17 +54,6 @@ const MAX_SPLITS_PER_NODE = 20;
  */
 const MAX_PDF_BYTES_FOR_PAGE_COUNT = 12 * 1024 * 1024;
 
-const IMAGE_EXTENSIONS = new Set([
-	"png",
-	"jpg",
-	"jpeg",
-	"gif",
-	"webp",
-	"svg",
-	"bmp",
-	"avif",
-]);
-
 /**
  * Should the bar build a preview pane at all?
  *
@@ -95,7 +86,13 @@ export interface PreviewTarget {
 export function previewTargetFor(item: OmniItem): PreviewTarget | null {
 	switch (item.kind) {
 		case "file":
-			return { path: item.path, kind: item.resultKind, line: item.line };
+			// A full-text hit on a link inside a note is that NOTE, opened at the
+			// link's line — not a generic "MD · 3 KB" file card.
+			return {
+				path: item.path,
+				kind: item.resultKind === "link" ? resultKindForPath(item.path) : item.resultKind,
+				line: item.line,
+			};
 		case "heading":
 		case "block":
 			return { path: item.path, kind: "note", line: item.line };
@@ -115,11 +112,9 @@ export function previewTargetFor(item: OmniItem): PreviewTarget | null {
 }
 
 function resultKindForPath(path: string): ResultKind {
-	const extension = extensionOf(path);
 	// Only markdown goes down the render path: a canvas is JSON, and handing it
-	// to MarkdownRenderer prints the raw document.
-	if (extension === "md") return "note";
-	return IMAGE_EXTENSIONS.has(extension) ? "image" : "file";
+	// to MarkdownRenderer prints the raw document. Same table the index uses.
+	return kindForExtension(extensionOf(path));
 }
 
 function extensionOf(path: string): string {
@@ -407,7 +402,9 @@ export { excerptAround };
  * rewriting HTML is also what keeps this clear of innerHTML.
  */
 function markMatches(root: HTMLElement, queryWords: readonly string[]): void {
-	const words = queryWords.map((word) => word.toLowerCase()).filter((word) => word.length > 1);
+	// Folded like the index folds them, and matched folded too (findFolded):
+	// "strasse" must mark "Straße", and "über" must mark "über" at all.
+	const words = queryWords.map(fold).filter((word) => word.length > 1 && !word.includes(" "));
 	if (words.length === 0) return;
 
 	const walker = root.doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -425,19 +422,11 @@ function markMatches(root: HTMLElement, queryWords: readonly string[]): void {
 		let guard = 0;
 		while (marks < MAX_MARKS && guard < MAX_SPLITS_PER_NODE) {
 			guard += 1;
-			const lower = current.data.toLowerCase();
-			let earliest = -1;
-			let length = 0;
-			for (const word of words) {
-				const index = lower.indexOf(word);
-				if (index !== -1 && (earliest === -1 || index < earliest)) {
-					earliest = index;
-					length = word.length;
-				}
-			}
-			if (earliest === -1) break;
-			const matchNode = current.splitText(earliest);
-			const rest = matchNode.splitText(length);
+			const found = findFolded(current.data, words);
+			if (found === null) break;
+			const [start, end] = found;
+			const matchNode = current.splitText(start);
+			const rest = matchNode.splitText(end - start);
 			// Detached on purpose — see the note on the preview root above.
 			const mark = root.doc.createElement("mark");
 			mark.addClass("barosaurus-mark");

@@ -503,25 +503,6 @@ export function listSettingTabs(app: unknown): Array<{ id: string; name: string 
 
 // ------------------------------------------------------------------- modal
 
-export interface UnsafeChooser {
-	useSelectedItem(ev: Partial<KeyboardEvent>): void;
-}
-
-/**
- * SuggestModal's internal chooser — the only way to run the highlighted item
- * from our own key handler. The returned object is a WRAPPER, so even the call
- * a caller makes later cannot throw.
- */
-export function getChooser(modal: unknown): UnsafeChooser | null {
-	const chooser = field(modal, "chooser");
-	if (!hasMethod(chooser, "useSelectedItem")) return null;
-	return {
-		useSelectedItem(ev: Partial<KeyboardEvent>): void {
-			invoke(chooser, "useSelectedItem", [ev], "chooser.useSelectedItem");
-		},
-	};
-}
-
 /**
  * Re-run the modal's own suggestion pipeline after we changed state behind its
  * back (a filter chip, a pushed page). False means the list is now stale and

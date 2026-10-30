@@ -44,8 +44,9 @@ function harness(files: TFile[], stored: string | null = null, settings: Partial
 			// Never resolves: jobs stay in flight, only the sweep itself is observed.
 			readBinary: () => new Promise(() => undefined),
 			adapter: {
-				exists: () => Promise.resolve(stored !== null),
-				read: () => Promise.resolve(stored ?? "{}"),
+				// A disk: what was written last is what is read back.
+				exists: () => Promise.resolve(stored !== null || writes.length > 0),
+				read: () => Promise.resolve(writes[writes.length - 1] ?? stored ?? "{}"),
 				write: (_path: string, data: string) => {
 					writes.push(data);
 					return Promise.resolve();
@@ -105,6 +106,17 @@ describe("OCR sweep", () => {
 			entries: Record<string, { missingSince?: number }>;
 		};
 		expect(saved.entries["new.pdf"]?.missingSince).toBeUndefined();
+	});
+
+	it("remembers only image and PDF moves while switched off, one per file", async () => {
+		const { pipeline, plugin, fire } = harness([], null, {});
+		await pipeline.init(plugin);
+		for (let i = 0; i < 100; i++) fire("delete", pdfFile(`notes/n${i}.md`));
+		fire("rename", pdfFile("b.pdf"), "a.pdf");
+		fire("rename", pdfFile("c.pdf"), "b.pdf");
+		const pending = (pipeline as unknown as { pendingMoves: unknown[] }).pendingMoves;
+		expect(pending).toEqual([{ from: "a.pdf", to: "c.pdf" }]);
+		await pipeline.destroy();
 	});
 
 	it("carries a rename over that happened while extraction was switched off", async () => {

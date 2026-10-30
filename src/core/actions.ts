@@ -1,4 +1,4 @@
-import type { ActionDef, ArgumentPicker, OmniItem } from "./types";
+import { frecencyKeyFor, type ActionDef, type ArgumentPicker, type OmniItem } from "./types";
 
 /**
  * The ⌘K panel.
@@ -11,6 +11,14 @@ import type { ActionDef, ArgumentPicker, OmniItem } from "./types";
  * Every `appliesTo` is pure, which is what makes the whole panel testable
  * without an App. Anything that needs Obsidian happens later, in the executor.
  */
+
+/**
+ * A Markdown note. Frontmatter lives only there: processFrontMatter on a
+ * canvas writes YAML over its JSON, on a PDF over its bytes.
+ */
+function isNote(item: OmniItem): boolean {
+	return item.kind === "file" && item.resultKind === "note";
+}
 
 function isFileLike(item: OmniItem): boolean {
 	return (
@@ -133,7 +141,7 @@ export const ACTIONS: readonly ActionDef[] = [
 		aliases: ["add tag", "tag"],
 		icon: "hash",
 		arguments: [{ kind: "tag", prompt: "Tag" }],
-		appliesTo: (item) => item.kind === "file",
+		appliesTo: (item) => isNote(item),
 	},
 	/**
 	 * The first two-argument actions in the registry: a key, then a value.
@@ -149,7 +157,7 @@ export const ACTIONS: readonly ActionDef[] = [
 			{ kind: "property", prompt: "Property" },
 			{ kind: "propertyValue", prompt: "Value" },
 		],
-		appliesTo: (item) => item.kind === "file",
+		appliesTo: (item) => isNote(item),
 	},
 	{
 		id: "remove-property",
@@ -157,7 +165,7 @@ export const ACTIONS: readonly ActionDef[] = [
 		aliases: ["remove property", "delete property", "clear property"],
 		icon: "list-x",
 		arguments: [{ kind: "property", prompt: "Property" }],
-		appliesTo: (item) => item.kind === "file",
+		appliesTo: (item) => isNote(item),
 	},
 	{
 		id: "bookmark",
@@ -351,17 +359,62 @@ export function argumentCount(action: ActionDef): number {
 /**
  * Toggle an id in the pin list.
  *
- * Keyed by `item.id`, never by a bare path: the ranker looks up
- * `pinned.has(item.id)`, so a pin written under any other key would be stored,
- * renamed along with the file, and never once read. `fileItemId()` is what
- * mints that id for files, which is why the two must agree.
+ * Keyed by item id, never by a bare path: the ranker looks the pin up by id,
+ * so a pin written under any other key would be stored, renamed along with
+ * the file, and never once read. `fileItemId()` is what mints that id for
+ * files, which is why the two must agree.
+ *
+ * Stored under `frecencyKeyFor(id)`, the same key frecency uses: a note found
+ * through its text is the same note as the one found through its title, and
+ * pinning either must pin both. Unpinning drops both spellings, so a pin
+ * written under the raw full-text id by an earlier version goes too.
  */
 export function togglePinned(pins: readonly string[], id: string): string[] {
-	return pins.includes(id) ? pins.filter((entry) => entry !== id) : [...pins, id];
+	const key = frecencyKeyFor(id);
+	return isPinned(pins, id)
+		? pins.filter((entry) => entry !== id && entry !== key)
+		: [...pins, key];
 }
 
 export function isPinned(pins: readonly string[], id: string): boolean {
-	return pins.includes(id);
+	return pins.includes(id) || pins.includes(frecencyKeyFor(id));
+}
+
+/** Item-id prefixes whose remainder starts with a vault path. */
+const PATH_PIN_PREFIXES = ["file:", "fulltext:", "folder:", "heading:", "block:"] as const;
+
+/**
+ * Follow a rename (`to` set) or a delete (`to` null) through the pin list.
+ * Null when nothing changed, so the caller writes data.json only when it must.
+ *
+ * Covers every id that carries a path — files, full-text hits, folders,
+ * headings (`heading:path:line`) and blocks (`block:path:id`) — and everything
+ * inside a renamed or deleted folder. Vault paths cannot contain ":", so the
+ * path of a heading or block id ends at its last colon.
+ */
+export function remapPins(
+	pins: readonly string[],
+	from: string,
+	to: string | null,
+): string[] | null {
+	let changed = false;
+	const out: string[] = [];
+	for (const pin of pins) {
+		const prefix = PATH_PIN_PREFIXES.find((candidate) => pin.startsWith(candidate));
+		const rest = prefix === undefined ? "" : pin.slice(prefix.length);
+		const hasSuffix = prefix === "heading:" || prefix === "block:";
+		const cut = hasSuffix ? rest.lastIndexOf(":") : rest.length;
+		const path = cut < 0 ? rest : rest.slice(0, cut);
+		const inside = path === from || path.startsWith(`${from}/`);
+		if (prefix === undefined || from.length === 0 || !inside) {
+			out.push(pin);
+			continue;
+		}
+		changed = true;
+		if (to === null) continue;
+		out.push(`${prefix}${to}${path.slice(from.length)}${rest.slice(path.length)}`);
+	}
+	return changed ? out : null;
 }
 
 // ------------------------------------------------------------------ hiding

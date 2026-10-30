@@ -9,6 +9,7 @@ import {
 	isHiddenItem,
 	isPinned,
 	nextArgument,
+	remapPins,
 	togglePinned,
 	toggleHidden,
 	withoutHidden,
@@ -164,6 +165,78 @@ describe("pins", () => {
 	it("stores exactly the id the ranker looks up", () => {
 		const file = fixtureFile("alpha");
 		expect(togglePinned([], file.id)).toEqual([file.id]);
+	});
+});
+
+describe("pins follow the file, whichever row it was found as", () => {
+	it("pins a full-text hit under the file's key, so the title row is pinned too", () => {
+		expect(togglePinned([], "fulltext:a.md")).toEqual(["file:a.md"]);
+		expect(isPinned(["file:a.md"], "fulltext:a.md")).toBe(true);
+	});
+
+	it("unpins both spellings, including a raw full-text pin from an older version", () => {
+		expect(togglePinned(["fulltext:a.md", "x"], "fulltext:a.md")).toEqual(["x"]);
+		expect(togglePinned(["file:a.md"], "fulltext:a.md")).toEqual([]);
+	});
+});
+
+describe("remapPins — renames and deletes", () => {
+	const pins = [
+		"file:Notes/a.md",
+		"fulltext:Notes/b.md",
+		"folder:Notes/Sub",
+		"heading:Notes/a.md:12",
+		"block:Notes/a.md:abc123",
+		"file:Notesy/c.md",
+		"command:editor:toggle-bold",
+	];
+
+	it("renames everything that carries the path, and only that", () => {
+		expect(remapPins(pins, "Notes", "Archive")).toEqual([
+			"file:Archive/a.md",
+			"fulltext:Archive/b.md",
+			"folder:Archive/Sub",
+			"heading:Archive/a.md:12",
+			"block:Archive/a.md:abc123",
+			"file:Notesy/c.md",
+			"command:editor:toggle-bold",
+		]);
+	});
+
+	it("renames a single file's heading and block pins along with it", () => {
+		expect(remapPins(["heading:Notes/a.md:12", "file:Notes/a.md"], "Notes/a.md", "Notes/z.md")).toEqual(
+			["heading:Notes/z.md:12", "file:Notes/z.md"],
+		);
+	});
+
+	it("drops everything under a deleted path", () => {
+		expect(remapPins(pins, "Notes", null)).toEqual([
+			"file:Notesy/c.md",
+			"command:editor:toggle-bold",
+		]);
+	});
+
+	it("reports no change as null, so nothing is written", () => {
+		expect(remapPins(pins, "Elsewhere", "Moved")).toBeNull();
+		expect(remapPins(pins, "Elsewhere", null)).toBeNull();
+	});
+});
+
+describe("properties are for notes only", () => {
+	const canvas = { ...fixtureFile("board"), path: "board.canvas", resultKind: "file" } as OmniItem;
+
+	it("never offers a frontmatter edit on a canvas, a PDF or an image", () => {
+		const ids = actionsFor(ACTIONS, canvas, EMPTY_CONTEXT, ALL_AVAILABLE).map((a) => a.id);
+		expect(ids).not.toContain("add-tag");
+		expect(ids).not.toContain("set-property");
+		expect(ids).not.toContain("remove-property");
+	});
+
+	it("still offers them on a note", () => {
+		const ids = actionsFor(ACTIONS, fixtureFile("a"), EMPTY_CONTEXT, ALL_AVAILABLE).map((a) => a.id);
+		expect(ids).toContain("add-tag");
+		expect(ids).toContain("set-property");
+		expect(ids).toContain("remove-property");
 	});
 });
 

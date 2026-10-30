@@ -238,6 +238,24 @@ describe("rankCandidates — the tier dominates the score", () => {
 	});
 });
 
+describe("rankCandidates — a full-text hit is the file it points at", () => {
+	const hit = (): FileItem =>
+		file({ id: "fulltext:b.md", title: "Bravo", path: "b.md", source: "fulltext", group: "fulltext" });
+
+	it("reads the file's frecency, which is where remember() writes it", () => {
+		const candidates = [candidate(file({ id: "file:a.md", title: "Alpha" }), 0.5), candidate(hit(), 0.5)];
+		const ranked = rankCandidates(candidates, "", EMPTY_CONTEXT, { frecency: { "file:b.md": 0.9 } });
+		expect(ids(ranked)[0]).toBe("fulltext:b.md");
+		expect(ranked[0]?.score).toBeGreaterThan(ranked[1]?.score ?? 0);
+	});
+
+	it("is lifted by a pin on the file", () => {
+		const candidates = [candidate(file({ id: "file:a.md", title: "Alpha" }), 0.5), candidate(hit(), 0.5)];
+		const ranked = rankCandidates(candidates, "", EMPTY_CONTEXT, { pinned: new Set(["file:b.md"]) });
+		expect(ids(ranked)[0]).toBe("fulltext:b.md");
+	});
+});
+
 describe("normalizeByRank", () => {
 	it("gives a single element the full score", () => {
 		expect(normalizeByRank(["only"])).toEqual([{ value: "only", norm: 1 }]);

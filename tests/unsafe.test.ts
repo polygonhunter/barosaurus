@@ -7,7 +7,6 @@ import {
 	formatChord,
 	getAllVaultTags,
 	getBookmarkItems,
-	getChooser,
 	getEnabledPluginIds,
 	getHotkeyChip,
 	getLeafId,
@@ -118,7 +117,6 @@ describe("unsafe accessors degrade instead of throwing", () => {
 			expect(revealInFileExplorer(app, "a.md")).toBe(false);
 			expect(openSettingsTab(app, "barosaurus")).toBe(false);
 			expect(listSettingTabs(app)).toEqual([]);
-			expect(getChooser(app)).toBeNull();
 			expect(forceUpdateSuggestions(app)).toBe(false);
 			expect(getLeafId(app)).toBeNull();
 			expect(() => capabilities(app)).not.toThrow();
@@ -415,26 +413,6 @@ describe("settings", () => {
 });
 
 describe("modal internals", () => {
-	it("wraps the chooser so a later call cannot throw either", () => {
-		const modal = {
-			chooser: {
-				useSelectedItem: () => {
-					throw new Error("boom");
-				},
-			},
-		};
-		const chooser = getChooser(modal);
-		expect(chooser).not.toBeNull();
-		expect(() => chooser?.useSelectedItem({ key: "Enter" })).not.toThrow();
-	});
-
-	it("passes the event through to the real chooser", () => {
-		const seen: unknown[] = [];
-		const modal = { chooser: { useSelectedItem: (ev: unknown) => seen.push(ev) } };
-		getChooser(modal)?.useSelectedItem({ key: "Enter" });
-		expect(seen).toEqual([{ key: "Enter" }]);
-	});
-
 	it("reports whether the suggestion refresh actually happened", () => {
 		let ran = 0;
 		expect(forceUpdateSuggestions({ updateSuggestions: () => (ran += 1) })).toBe(true);

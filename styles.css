@@ -76,12 +76,17 @@
 	padding: var(--size-4-4) var(--size-4-4) var(--size-4-4) 0;
 }
 
-/* Breadcrumb pills: one per pushed page, left of what you type. */
+/* Breadcrumb pills: one per pushed page, left of what you type. They give way
+   before the input does — three crumbs at full width left a phone with a field
+   too narrow to type into. */
 .barosaurus-breadcrumbs {
 	display: flex;
 	align-items: center;
 	gap: var(--size-2-2);
-	flex: 0 0 auto;
+	flex: 0 1 auto;
+	min-width: 0;
+	max-width: 70%;
+	overflow: hidden;
 }
 
 .barosaurus-breadcrumbs.is-empty {
@@ -92,6 +97,8 @@
 	display: inline-flex;
 	align-items: baseline;
 	gap: var(--size-2-1);
+	flex: 0 1 auto;
+	min-width: 0;
 	max-width: 14em;
 	padding: var(--size-2-1) var(--size-4-2);
 	border-radius: var(--radius-s);
@@ -100,10 +107,25 @@
 	color: var(--text-muted);
 	white-space: nowrap;
 	overflow: hidden;
+}
+
+/* The crumb is a flex box, where text-overflow does nothing: the ellipsis has
+   to sit on the spans, and they have to be allowed to shrink to show it. */
+.barosaurus-crumb-label,
+.barosaurus-crumb-value {
+	min-width: 0;
+	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
+/* The value is what was chosen; the label (often a long note title) gives way
+   first. */
+.barosaurus-crumb-label {
+	flex: 0 2 auto;
+}
+
 .barosaurus-crumb-value {
+	flex: 0 1 auto;
 	color: var(--text-normal);
 	font-weight: var(--font-medium);
 }

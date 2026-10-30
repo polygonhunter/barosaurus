@@ -5,6 +5,7 @@ import { historyQuery, historyStep } from "../../src/core/actions";
 import { ALL_SOURCES } from "../../src/main";
 import { choose, runAction, type ExecuteHost } from "../../src/ui/execute";
 import { OmnibarModal } from "../../src/ui/omnibar-modal";
+import type { BarPage, BarSurface } from "../../src/ui/picker";
 import type { Candidate, OmniItem } from "../../src/core/types";
 import type { Source, SourceContext, StreamingSource } from "../../src/sources/source";
 
@@ -223,6 +224,106 @@ describe("Enter runs the highlighted result", () => {
 		expect(chosen).toHaveBeenCalledTimes(1);
 		const [item] = chosen.mock.calls[0] as [OmniItem];
 		expect(item.id).toBe("bold");
+	});
+});
+
+/** A picker row, the shape every BarPage hands back. */
+function pickRow(value: string): OmniItem {
+	return {
+		id: `pick:${value}`,
+		kind: "action",
+		source: "command",
+		group: "actions",
+		title: value,
+		aliases: [],
+		tile: { kind: "icon", icon: "folder" },
+		actionId: `pick:${value}`,
+	} as OmniItem;
+}
+
+/** A level whose pick pushes a second level — what "Move to…" does. */
+function flowPage(onPick: (bar: BarSurface) => void): BarPage {
+	return {
+		kind: "actions",
+		label: "Note",
+		placeholder: "",
+		emptyText: "Nothing to do here.",
+		rows: () => [pickRow("Move to…")],
+		choose: (_row, bar) => onPick(bar),
+	};
+}
+
+const SECOND_LEVEL: BarPage = {
+	kind: "folder",
+	label: "Move to folder",
+	placeholder: "",
+	emptyText: "No folder matches.",
+	rows: () => [pickRow("Projects")],
+	choose: () => undefined,
+};
+
+/**
+ * SuggestModal closes itself around onChooseSuggestion. That is the harness's
+ * behaviour too, and it is what made every multi-step action die after its
+ * first pick: the next level was pushed into a bar that was already gone.
+ */
+describe("a pick inside a flow keeps the bar open", () => {
+	beforeEach(() => {
+		document.body.empty();
+	});
+
+	it("Enter on a pushed level reaches the next level", async () => {
+		const { modal } = openBar([commandItem("bold", "Bold")]);
+		modal.pushPage(flowPage((bar) => bar.pushPage(SECOND_LEVEL)));
+		await vi.waitFor(() => expect(rowTitles(modal).join(" ")).toContain("Move to…"));
+
+		press(modal, "Enter");
+
+		expect(modal.containerEl.isConnected, "the bar closed on a pick inside the flow").toBe(true);
+		await vi.waitFor(() => expect(rowTitles(modal).join(" ")).toContain("Projects"));
+		expect(modal.pageState().pages.map((page) => page.kind)).toEqual(["root", "actions", "folder"]);
+	});
+
+	it("⌘1 on a pushed level does the same", async () => {
+		const { modal } = openBar([commandItem("bold", "Bold")]);
+		modal.pushPage(flowPage((bar) => bar.pushPage(SECOND_LEVEL)));
+		await vi.waitFor(() => expect(rowTitles(modal).join(" ")).toContain("Move to…"));
+
+		press(modal, "1", { metaKey: true });
+
+		expect(modal.containerEl.isConnected).toBe(true);
+		expect(modal.pageState().pages).toHaveLength(3);
+	});
+
+	it("the flow can still close the bar once it is done", async () => {
+		const { modal } = openBar([commandItem("bold", "Bold")]);
+		modal.pushPage(flowPage((bar) => bar.close()));
+		await vi.waitFor(() => expect(rowTitles(modal).join(" ")).toContain("Move to…"));
+
+		press(modal, "Enter");
+
+		expect(modal.containerEl.isConnected).toBe(false);
+	});
+
+	it("Enter at the root is still a destination and closes", async () => {
+		const { modal, chosen } = openBar([commandItem("bold", "Bold")]);
+		type(modal, "bold");
+		await vi.waitFor(() => expect(rowTitles(modal).length).toBeGreaterThan(0));
+
+		press(modal, "Enter");
+
+		expect(chosen).toHaveBeenCalledTimes(1);
+		expect(modal.containerEl.isConnected).toBe(false);
+	});
+
+	it("backing out past a value-only level lands where the flow started", async () => {
+		const { modal } = openBar([commandItem("bold", "Bold")]);
+		modal.pushPage({ ...SECOND_LEVEL, kind: "prefilled", rows: () => [], skipOnBack: true });
+		modal.pushPage(SECOND_LEVEL);
+
+		press(modal, "Escape");
+
+		expect(modal.pageState().pages.map((page) => page.kind)).toEqual(["root"]);
 	});
 });
 

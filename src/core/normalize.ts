@@ -47,3 +47,59 @@ export function acronym(text: string): string {
 		.map((word) => word[0] ?? "")
 		.join("");
 }
+
+/** `fold` for ONE character, without the whitespace collapse. May be "" or "ss". */
+function foldChar(char: string): string {
+	return char
+		.toLowerCase()
+		.replace(/ß/g, "ss")
+		.normalize("NFD")
+		.replace(COMBINING_MARKS_RE, "")
+		.replace(PUNCTUATION_RE, " ");
+}
+
+/**
+ * Where the first of `words` occurs in RAW text, as [start, end) offsets into
+ * that raw string, compared folded — or null when none does.
+ *
+ * The bridge between fold()-based matching and anything that has to cut the
+ * real text, like a highlighter: folding changes lengths (ß → ss, é → e + a
+ * dropped mark), so an offset found in `fold(text)` does not point into
+ * `text`. `words` must already be folded and contain no spaces —
+ * `foldedWords(query)`.
+ */
+export function findFolded(text: string, words: readonly string[]): [number, number] | null {
+	let folded = "";
+	/** Per folded code unit: the raw range of the character it came from. */
+	const starts: number[] = [];
+	const ends: number[] = [];
+	let at = 0;
+	for (const char of text) {
+		const end = at + char.length;
+		const piece = foldChar(char);
+		if (piece.length === 0) {
+			// A lone combining mark belongs to the letter before it.
+			if (ends.length > 0) ends[ends.length - 1] = end;
+		} else {
+			folded += piece;
+			for (let i = 0; i < piece.length; i++) {
+				starts.push(at);
+				ends.push(end);
+			}
+		}
+		at = end;
+	}
+
+	let best = -1;
+	let length = 0;
+	for (const word of words) {
+		if (word.length === 0) continue;
+		const index = folded.indexOf(word);
+		if (index !== -1 && (best === -1 || index < best)) {
+			best = index;
+			length = word.length;
+		}
+	}
+	if (best === -1) return null;
+	return [starts[best] ?? 0, ends[best + length - 1] ?? text.length];
+}

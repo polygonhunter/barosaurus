@@ -27,6 +27,13 @@ interface CacheFileShape {
 export class OcrCache {
 	private entries: Record<string, OcrCacheEntry> = {};
 	private dirty = false;
+	/**
+	 * Paths this device removed since the last write. The merge in save()
+	 * must not bring them back from the copy on disk.
+	 */
+	private readonly removed = new Set<string>();
+	/** The save in flight; the next one starts after it. */
+	private saving: Promise<void> = Promise.resolve();
 	private readonly path: string;
 
 	constructor(
@@ -38,13 +45,18 @@ export class OcrCache {
 
 	async load(): Promise<void> {
 		try {
-			if (!(await this.app.vault.adapter.exists(this.path))) return;
-			const raw = JSON.parse(await this.app.vault.adapter.read(this.path)) as CacheFileShape;
 			// Merge instead of replace — tolerant of sync-merged files.
-			this.entries = { ...raw.entries, ...this.entries };
+			this.entries = { ...(await this.readFile()), ...this.entries };
 		} catch {
 			// Corrupt cache = cold cache. Never fatal.
 		}
+	}
+
+	/** The entries in the file as it is on disk now; {} when there is none. */
+	private async readFile(): Promise<Record<string, OcrCacheEntry>> {
+		if (!(await this.app.vault.adapter.exists(this.path))) return {};
+		const raw = JSON.parse(await this.app.vault.adapter.read(this.path)) as Partial<CacheFileShape>;
+		return raw.entries ?? {};
 	}
 
 	get(path: string, mtime: number, size: number, langs: string): string | null {
@@ -56,12 +68,14 @@ export class OcrCache {
 
 	set(path: string, entry: OcrCacheEntry): void {
 		this.entries[path] = entry;
+		this.removed.delete(path);
 		this.dirty = true;
 	}
 
 	remove(path: string): void {
 		if (path in this.entries) {
 			delete this.entries[path];
+			this.removed.add(path);
 			this.dirty = true;
 		}
 	}
@@ -70,7 +84,9 @@ export class OcrCache {
 		const entry = this.entries[oldPath];
 		if (!entry) return;
 		delete this.entries[oldPath];
+		this.removed.add(oldPath);
 		this.entries[newPath] = entry;
+		this.removed.delete(newPath);
 		this.dirty = true;
 	}
 
@@ -99,6 +115,7 @@ export class OcrCache {
 				changed = true;
 			} else if (now - entry.missingSince > graceMs) {
 				delete this.entries[path];
+				this.removed.add(path);
 				changed = true;
 			}
 		}
@@ -106,14 +123,43 @@ export class OcrCache {
 		return changed;
 	}
 
-	async save(): Promise<void> {
+	/**
+	 * Write the cache — merged with the file as it is NOW, not as it was at
+	 * load. The file is synced: another desktop may have recognized images
+	 * since this one started, and writing the in-memory copy as a whole threw
+	 * that work away. Entries this device holds win; entries it removed stay
+	 * removed.
+	 */
+	save(): Promise<void> {
+		// One at a time: two overlapping saves would each merge with the file
+		// as it was BEFORE the other's write, and bring removed entries back.
+		const run = this.saving.then(() => this.saveNow());
+		this.saving = run.catch(() => undefined);
+		return run;
+	}
+
+	private async saveNow(): Promise<void> {
 		if (!this.dirty) return;
 		this.dirty = false;
+		const removed = [...this.removed];
+		this.removed.clear();
 		try {
+			let onDisk: Record<string, OcrCacheEntry> = {};
+			try {
+				onDisk = await this.readFile();
+			} catch {
+				// Unreadable on disk: nothing to merge, ours is the better copy.
+			}
+			for (const [path, entry] of Object.entries(onDisk)) {
+				if (path in this.entries || removed.includes(path)) continue;
+				this.entries[path] = entry;
+			}
 			const shape: CacheFileShape = { version: 1, entries: this.entries };
 			await this.app.vault.adapter.write(this.path, JSON.stringify(shape));
 		} catch {
-			this.dirty = true; // retry on the next save
+			// Retry on the next save, still without the removed paths.
+			this.dirty = true;
+			for (const path of removed) this.removed.add(path);
 		}
 	}
 }

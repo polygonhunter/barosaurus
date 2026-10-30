@@ -73,10 +73,11 @@ function harness(settings: Partial<BarosaurusSettings>, stored: string | null = 
 			getFileByPath: (path: string) => files.find((file) => file.path === path) ?? null,
 			readBinary: () => Promise.resolve(new ArrayBuffer(8)),
 			adapter: {
-				exists: () => Promise.resolve(stored !== null),
+				// A disk: what was written last is what is read back.
+				exists: () => Promise.resolve(stored !== null || writes.length > 0),
 				read: (path: string) => {
 					reads.push(path);
-					return Promise.resolve(stored ?? "{}");
+					return Promise.resolve(writes[writes.length - 1] ?? stored ?? "{}");
 				},
 				write: (_path: string, data: string) => {
 					writes.push(data);
@@ -189,7 +190,9 @@ describe("the extraction cache file", () => {
 
 		expect(pipeline.cachedText(file)).toBe("contract terms");
 		expect(engine.search("contract").map((hit) => hit.id)).toEqual([file.path]);
-		// The harness debounce is synchronous, so the mark is written at once.
+		// The harness debounce is synchronous; the write itself lands once the
+		// save has merged with the file on disk.
+		await tick(0);
 		const last = lastWrite(writes);
 		expect(Object.keys(last.entries)).toEqual(["docs/contract.pdf", "docs/deleted.pdf"]);
 		expect(last.entries["docs/deleted.pdf"]?.missingSince).toEqual(expect.any(Number));
@@ -207,9 +210,11 @@ describe("the extraction cache file", () => {
 			await pipeline.scanVault();
 			now.mockReturnValue(start + 29 * DAY);
 			await pipeline.scanVault();
+			await tick(0);
 			expect(Object.keys(lastWrite(writes).entries)).toContain("docs/deleted.pdf");
 			now.mockReturnValue(start + 31 * DAY);
 			await pipeline.scanVault();
+			await tick(0);
 			expect(Object.keys(lastWrite(writes).entries)).toEqual(["docs/contract.pdf"]);
 			await pipeline.destroy();
 		} finally {
